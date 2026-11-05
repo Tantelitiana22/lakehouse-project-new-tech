@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,6 +12,51 @@ from ndr_lakehouse.asset_property.schema_validator import (
     AssetConfig,
     parse_asset_config,
 )
+
+MINIMAL_PLATFORM_YAML = """
+platform:
+  storage:
+    endpoint_url: http://localhost:9000
+    access_key_id: test
+    secret_access_key: test
+    landing_bucket: landing-zone
+    lakehouse_bucket: lakehouse
+  unity_catalog:
+    base_url: http://localhost:8080
+    catalog_name: lakehouse
+  spark:
+    master: local[*]
+"""
+
+
+@pytest.fixture
+def write_use_case(tmp_path):
+    """Create ``<root>/<name>/use_case.yaml`` plus a minimal platform file."""
+
+    def _write(name: str, *, default: bool = False, root: Path | None = None) -> Path:
+        base = root or tmp_path
+        directory = base / name
+        assets = directory / "assets"
+        assets.mkdir(parents=True, exist_ok=True)
+        (assets / "platform.yaml").write_text(MINIMAL_PLATFORM_YAML, encoding="utf-8")
+        manifest = directory / "use_case.yaml"
+        manifest.write_text(
+            f"""
+use_case:
+  name: {name}
+  assets_dir: assets
+  platform_file: assets/platform.yaml
+  dbt_project_dir: ../../dbt_lakehouse
+  dbt_sources_path: models/staging/_sources.yml
+  gold_models: [dim_a]
+  semantic_metric: m
+  default: {str(default).lower()}
+""",
+            encoding="utf-8",
+        )
+        return manifest
+
+    return _write
 
 
 @pytest.fixture

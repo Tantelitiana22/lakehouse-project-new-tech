@@ -21,3 +21,11 @@ class UnsupportedWriteModeError(LakehouseError):
 
 class RetryExhaustedError(LakehouseError):
     """A retryable HTTP operation exhausted its retry budget."""
+
+
+class UseCaseNotFoundError(LakehouseError):
+    """No use-case manifest matched the requested name."""
+
+
+class AmbiguousDefaultUseCaseError(LakehouseError):
+    """More than one use-case manifest is marked as the default."""

@@ -1,11 +1,13 @@
 """Domain ports and errors."""
 
 from ndr_lakehouse.domain.errors import (
+    AmbiguousDefaultUseCaseError,
     LakehouseError,
     RetryExhaustedError,
     UnsupportedPaginationStrategyError,
     UnsupportedSourceTypeError,
     UnsupportedWriteModeError,
+    UseCaseNotFoundError,
 )
 from ndr_lakehouse.domain.ports import (
     CatalogGateway,
@@ -16,6 +18,7 @@ from ndr_lakehouse.domain.ports import (
 )
 
 __all__ = [
+    "AmbiguousDefaultUseCaseError",
     "CatalogGateway",
     "HttpResponse",
     "HttpTransport",
@@ -26,4 +29,5 @@ __all__ = [
     "UnsupportedPaginationStrategyError",
     "UnsupportedSourceTypeError",
     "UnsupportedWriteModeError",
+    "UseCaseNotFoundError",
 ]
