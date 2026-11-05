@@ -19,6 +19,18 @@ from ndr_lakehouse.provisioning.resource import (
     UnityCatalogProvisionerResource,
 )
 
+HANDLER_CALLS: list[str] = []
+
+
+class _RecordingHandler:
+    def land(self, context, config):
+        HANDLER_CALLS.append("land")
+        return "s3a://custom/output"
+
+    def load(self, context, config, landing_uri):
+        HANDLER_CALLS.append("load")
+        return {"row_count": 7}
+
 
 def test_factory_creates_landing_and_iceberg_pairs(sample_asset_config):
     assets = build_ingestion_assets_from_yaml(configs=[sample_asset_config])
@@ -107,3 +119,60 @@ def test_materialize_landing_and_iceberg_assets_in_memory(mocker, sample_asset_c
     assert len(materializations) == 1
     assert "row_count" in materializations[0].metadata
     assert "snapshot" in materializations[0].metadata
+
+
+def test_custom_handler_overrides_landing_and_merges_load(mocker, sample_asset_config):
+    HANDLER_CALLS.clear()
+    mocker.patch.object(UnityCatalogProvisionerResource, "ensure_buckets", return_value={})
+    mocker.patch.object(
+        UnityCatalogProvisionerResource, "ensure_catalog_and_schema", return_value={}
+    )
+    ingestor = NativeIngestorResource()
+    mocker.patch.object(NativeIngestorResource, "ingest", return_value="s3a://platform/x")
+    spark = SparkIcebergResource()
+    mocker.patch.object(
+        SparkIcebergResource,
+        "load",
+        return_value={"table": "lakehouse.bronze.demo_table", "row_count": 42},
+    )
+
+    config = sample_asset_config.model_copy(update={"handler": f"{__name__}:_RecordingHandler"})
+    assets = build_ingestion_assets_from_yaml(configs=[config])
+    result = materialize(
+        assets,
+        resources={
+            "uc_provisioner": UnityCatalogProvisionerResource(),
+            "native_ingestor": ingestor,
+            "spark_iceberg": spark,
+        },
+    )
+
+    assert result.success
+    assert HANDLER_CALLS == ["land", "load"]
+    NativeIngestorResource.ingest.assert_not_called()  # handler returned non-None
+    SparkIcebergResource.load.assert_called_once_with(config, "s3a://custom/output")
+    metadata = result.asset_materializations_for_node("lakehouse__bronze__demo_table")[0].metadata
+    assert metadata["row_count"].value == 7  # handler dict wins
+    assert metadata["table"].value == "lakehouse.bronze.demo_table"
+
+
+def test_asset_without_handler_uses_platform_path(mocker, sample_asset_config):
+    mocker.patch.object(UnityCatalogProvisionerResource, "ensure_buckets", return_value={})
+    mocker.patch.object(
+        UnityCatalogProvisionerResource, "ensure_catalog_and_schema", return_value={}
+    )
+    ingestor = NativeIngestorResource()
+    mocker.patch.object(NativeIngestorResource, "ingest", return_value="s3a://platform/output")
+
+    assets = build_ingestion_assets_from_yaml(configs=[sample_asset_config])
+    landing_asset = next(a for a in assets if AssetKey(["landing", "demo_source"]) in a.keys)
+
+    result = materialize(
+        [landing_asset],
+        resources={
+            "uc_provisioner": UnityCatalogProvisionerResource(),
+            "native_ingestor": ingestor,
+        },
+    )
+    assert result.success
+    NativeIngestorResource.ingest.assert_called_once_with(sample_asset_config)

@@ -341,6 +341,7 @@ class AssetConfig(_StrictModel):
     tags: dict[str, str] = Field(default_factory=dict)
     source_properties: SourceProperties
     catalog_properties: CatalogProperties
+    handler: str | None = None
 
     @field_validator("name", "group_name")
     @classmethod
