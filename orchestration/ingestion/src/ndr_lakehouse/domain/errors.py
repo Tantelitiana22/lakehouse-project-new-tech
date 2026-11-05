@@ -33,3 +33,7 @@ class AmbiguousDefaultUseCaseError(LakehouseError):
 
 class DuplicateAssetNameError(LakehouseError, ValueError):
     """Two asset files declare the same asset name."""
+
+
+class InvalidHandlerReferenceError(LakehouseError):
+    """A configured handler dotted path does not resolve or violates the contract."""
