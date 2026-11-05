@@ -29,3 +29,7 @@ class UseCaseNotFoundError(LakehouseError):
 
 class AmbiguousDefaultUseCaseError(LakehouseError):
     """More than one use-case manifest is marked as the default."""
+
+
+class DuplicateAssetNameError(LakehouseError, ValueError):
+    """Two asset files declare the same asset name."""

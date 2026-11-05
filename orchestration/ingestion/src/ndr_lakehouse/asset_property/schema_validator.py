@@ -16,6 +16,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ndr_lakehouse.domain.errors import DuplicateAssetNameError
+
 Identifier = str
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -403,21 +405,28 @@ def load_asset_configs(path: str | Path) -> list[AssetConfig]:
     return load_asset_config_file(path)
 
 
-def discover_asset_configs(asset_dir: str | Path) -> list[AssetConfig]:
-    """Scan a directory for ``*.yaml`` files, excluding ``platform.yaml``."""
+def discover_asset_configs(asset_dir: str | Path, *, recursive: bool = False) -> list[AssetConfig]:
+    """Scan a directory for asset declarations, excluding ``platform.yaml``.
+
+    Only the top-level ``*.yaml`` files are read by default. Pass
+    ``recursive=True`` to walk sub-directories with ``**/*.yaml``, which is how
+    a use-case ``assets/`` package is discovered. Both modes return configs in
+    sorted path order and skip ``platform.yaml`` at any depth.
+    """
 
     directory = Path(asset_dir)
     if not directory.exists():
         raise FileNotFoundError(f"asset_property directory not found: {directory}")
 
+    pattern = "**/*.yaml" if recursive else "*.yaml"
     configs: list[AssetConfig] = []
     seen: dict[str, Path] = {}
-    for path in sorted(directory.glob("*.yaml")):
+    for path in sorted(directory.glob(pattern)):
         if path.name == _PLATFORM_FILENAME:
             continue
         for config in load_asset_config_file(path):
             if config.name in seen:
-                raise ValueError(
+                raise DuplicateAssetNameError(
                     f"duplicate asset name {config.name!r} in {seen[config.name]} and {path}"
                 )
             seen[config.name] = path

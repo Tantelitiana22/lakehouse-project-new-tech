@@ -129,6 +129,23 @@ def test_duplicate_asset_names_are_rejected_in_discovery(tmp_path: Path, asset_p
         discover_asset_configs(tmp_path)
 
 
+def test_duplicate_asset_name_error_is_a_value_error():
+    from ndr_lakehouse.domain.errors import DuplicateAssetNameError, LakehouseError
+
+    assert issubclass(DuplicateAssetNameError, ValueError)
+    assert issubclass(DuplicateAssetNameError, LakehouseError)
+
+
+def test_recursive_discovery_finds_nested_assets(tmp_path: Path, asset_payload):
+    import yaml
+
+    nested = tmp_path / "sub"
+    nested.mkdir()
+    (nested / "a.yaml").write_text(yaml.safe_dump(asset_payload), encoding="utf-8")
+    assert [c.name for c in discover_asset_configs(tmp_path, recursive=True)] == ["demo_source"]
+    assert discover_asset_configs(tmp_path, recursive=False) == []
+
+
 def test_load_asset_file_roundtrip(tmp_path: Path, asset_payload):
     import yaml
 
