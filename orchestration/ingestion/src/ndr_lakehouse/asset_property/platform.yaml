@@ -1,0 +1,25 @@
+# ---------------------------------------------------------------------------
+# Global platform contract. Credentials may be overridden with environment
+# variables (S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, UC_BASE_URL, ...).
+# ---------------------------------------------------------------------------
+platform:
+  storage:
+    endpoint_url: http://rustfs:9000
+    access_key_id: rustfsadmin
+    secret_access_key: rustfssecret
+    region: us-east-1
+    landing_bucket: landing-zone
+    lakehouse_bucket: lakehouse
+    use_path_style: true
+
+  unity_catalog:
+    base_url: http://unity-catalog:8080
+    api_version: "2.1"
+    catalog_name: lakehouse
+    schema_name: bronze
+    storage_root: s3://lakehouse/warehouse
+
+  spark:
+    master: "local[*]"
+    app_name: lakehouse-ingestion
+    warehouse: s3://lakehouse/warehouse

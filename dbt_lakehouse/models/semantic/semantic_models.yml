@@ -1,0 +1,115 @@
+version: 2
+
+semantic_models:
+  - name: lots_batis
+    description: >-
+      Lot-level DVF fact for department 77. The dbt model already deduplicates
+      lots and computes mutation totals with window functions, which is the
+      CTE anti-fanout guard for the prix_moyen_m2 ratio metric.
+    model: ref('fct_lots_batis')
+    defaults:
+      agg_time_dimension: mutation_date
+    entities:
+      - name: lot
+        type: primary
+        expr: lot_id
+      - name: mutation
+        type: foreign
+        expr: mutation_id
+      - name: commune
+        type: foreign
+        expr: commune_code
+    dimensions:
+      - name: mutation_date
+        type: time
+        type_params:
+          time_granularity: day
+        expr: mutation_date
+      - name: nature_mutation
+        type: categorical
+        expr: nature_mutation
+      - name: commune_code
+        type: categorical
+        expr: commune_code
+      - name: department_code
+        type: categorical
+        expr: department_code
+    measures:
+      - name: total_volume_ventes_eur
+        description: Sum of lot sale values in EUR.
+        agg: sum
+        expr: valeur_fonciere
+      - name: total_surface_vendue_m2
+        description: Sum of lot built surfaces in square metres.
+        agg: sum
+        expr: surface_reelle_bati
+      - name: total_lots
+        description: Number of lots sold.
+        agg: sum
+        expr: "1"
+
+  - name: mutations
+    description: Mutation-level DVF fact, useful for mutation counts and controls.
+    model: ref('fct_mutations')
+    defaults:
+      agg_time_dimension: mutation_date
+    entities:
+      - name: mutation
+        type: primary
+        expr: mutation_id
+      - name: commune
+        type: foreign
+        expr: commune_code
+    dimensions:
+      - name: mutation_date
+        type: time
+        type_params:
+          time_granularity: day
+        expr: mutation_date
+      - name: nature_mutation
+        type: categorical
+        expr: nature_mutation
+      - name: commune_code
+        type: categorical
+        expr: commune_code
+    measures:
+      - name: total_mutations
+        description: Number of DVF mutations.
+        agg: sum
+        expr: "1"
+
+metrics:
+  - name: volume_ventes_eur
+    description: Total real-estate sales volume in EUR.
+    type: simple
+    type_params:
+      measure: total_volume_ventes_eur
+
+  - name: surface_vendue_m2
+    description: Total built surface sold in square metres.
+    type: simple
+    type_params:
+      measure: total_surface_vendue_m2
+
+  - name: prix_moyen_m2
+    description: >-
+      Average sale price per square metre, computed as a ratio metric
+      (volume_ventes_eur / surface_vendue_m2). The denominator is never
+      fanned out because fct_lots_batis pre-aggregates mutation totals in a
+      dedicated CTE before semantic consumption.
+    type: ratio
+    type_params:
+      numerator: volume_ventes_eur
+      denominator: surface_vendue_m2
+
+  - name: nombre_lots_vendus
+    description: Number of lots sold.
+    type: simple
+    type_params:
+      measure: total_lots
+
+  - name: nombre_mutations
+    description: Number of DVF mutations at commune level.
+    type: simple
+    type_params:
+      measure: total_mutations
