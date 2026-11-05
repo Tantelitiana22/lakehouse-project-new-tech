@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from contextlib import AbstractContextManager
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from ndr_lakehouse.asset_property.schema_validator import AssetConfig
 
 
 class ObjectStore(Protocol):
@@ -102,3 +106,35 @@ class SparkSessionProvider(Protocol):
     """Port for creating a SparkSession configured for Unity Catalog."""
 
     def create(self, catalog_name: str | None = None) -> Any: ...
+
+
+class LandingPort(Protocol):
+    """Port for landing raw records and returning the landing URI."""
+
+    def ingest(self, config: "AssetConfig") -> str: ...
+
+
+class IcebergPort(Protocol):
+    """Port for loading a landed dataset into Iceberg and reporting a summary."""
+
+    def load(self, config: "AssetConfig", landing_uri: str) -> dict[str, Any]: ...
+
+
+@dataclass(frozen=True)
+class HandlerContext:
+    """Collaborators and settings handed to a use-case handler."""
+
+    landing: LandingPort
+    iceberg: IcebergPort
+    settings: Mapping[str, str]
+
+
+class UseCaseHandler(Protocol):
+    """Escape hatch letting a use case override landing and/or loading per asset."""
+
+    def land(self, context: HandlerContext, config: "AssetConfig") -> str | None: ...
+
+    def load(
+        self, context: HandlerContext, config: "AssetConfig", landing_uri: str
+    ) -> dict[str, Any] | None: ...
+
