@@ -9,7 +9,7 @@ Layers:
 - ``domain`` / ``infrastructure``  ports and concrete adapters
 """
 
-from ndr_lakehouse.orchestration.definitions import build_definitions, defs
+from ndr_lakehouse.orchestration.definitions import build_definitions
 
-__all__ = ["build_definitions", "defs"]
+__all__ = ["build_definitions"]
 __version__ = "0.2.0"

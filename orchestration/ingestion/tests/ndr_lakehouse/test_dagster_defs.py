@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -236,3 +237,38 @@ def test_empty_handler_string_uses_platform_path(sample_asset_config):
         "uc_provisioner",
     ]
     assert sorted(iceberg_asset.op.required_resource_keys) == ["spark_iceberg"]
+
+
+def test_resource_bundle_requires_a_use_case():
+    from ndr_lakehouse.orchestration.resources import build_resource_bundle
+
+    assert "use_case" in inspect.signature(build_resource_bundle).parameters
+    with pytest.raises(TypeError):
+        build_resource_bundle()
+
+
+def test_resource_bundle_uses_manifest_platform(write_use_case):
+    from ndr_lakehouse.asset_property.use_case import load_use_case_config
+    from ndr_lakehouse.orchestration.resources import build_resource_bundle
+
+    config = load_use_case_config(write_use_case("demo"))
+    bundle = build_resource_bundle(config, register_dbt=False)
+    assert {"uc_provisioner", "native_ingestor", "spark_iceberg"} <= bundle.keys()
+    assert "dbt" not in bundle
+
+
+def test_resource_bundle_warns_when_dbt_project_is_missing(write_use_case, caplog):
+    from ndr_lakehouse.asset_property.use_case import load_use_case_config
+    from ndr_lakehouse.orchestration.resources import build_resource_bundle
+
+    config = load_use_case_config(write_use_case("demo"))
+    with caplog.at_level("WARNING"):
+        bundle = build_resource_bundle(config, register_dbt=True)
+    assert "dbt" not in bundle
+    assert any("dbt_project.yml" in record.message for record in caplog.records)
+
+
+def test_library_no_longer_exposes_defs():
+    import ndr_lakehouse
+
+    assert not hasattr(ndr_lakehouse, "defs")

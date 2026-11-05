@@ -18,7 +18,6 @@ from ndr_lakehouse.orchestration.paths import (
     DBT_PROJECT_DIR,
     DBT_SOURCES_PATH,
 )
-from ndr_lakehouse.orchestration.resources import build_resource_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,6 @@ def build_definitions() -> Definitions:
     )
     assets = [*ingestion_assets, *dbt_assets, metricflow_semantic_validation]
 
-    return Definitions(assets=assets, resources=build_resource_bundle())
-
-
-defs = build_definitions()
+    # TODO(Task 8): pass resources=build_resource_bundle(use_case, ...) once
+    # build_definitions takes a use case.
+    return Definitions(assets=assets)

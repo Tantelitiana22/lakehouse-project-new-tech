@@ -3,28 +3,29 @@
 from __future__ import annotations
 
 import logging
-import shutil
 
-from ndr_lakehouse.asset_property.schema_validator import (
-    PlatformConfig,
-    load_platform_config,
-)
+from ndr_lakehouse.asset_property.schema_validator import load_platform_config
+from ndr_lakehouse.asset_property.use_case import UseCaseConfig
 from ndr_lakehouse.iceberg.resource import SparkIcebergResource
 from ndr_lakehouse.landing.resource import NativeIngestorResource
-from ndr_lakehouse.orchestration.paths import ASSET_PROPERTY_DIR, DBT_PROJECT_DIR
 from ndr_lakehouse.provisioning.resource import UnityCatalogProvisionerResource
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PLATFORM = load_platform_config(ASSET_PROPERTY_DIR / "platform.yaml")
-
 
 def build_resource_bundle(
-    platform: PlatformConfig | None = None,
+    use_case: UseCaseConfig,
+    *,
+    register_dbt: bool = True,
 ) -> dict[str, object]:
-    """Instantiate one shared resource bundle for the whole graph."""
+    """Instantiate the shared resource bundle for one use case.
 
-    platform = platform or DEFAULT_PLATFORM
+    There is no default platform: the platform file always comes from the
+    use case manifest, and a missing manifest is a configuration error rather
+    than something to paper over with hardcoded defaults.
+    """
+
+    platform = load_platform_config(use_case.platform_path)
     storage = platform.storage
     unity = platform.unity_catalog
     spark = platform.spark
@@ -65,14 +66,23 @@ def build_resource_bundle(
         "spark_iceberg": spark_resource,
     }
 
+    if not register_dbt:
+        return resources
+
+    project_dir = use_case.dbt_project_path
+    if not (project_dir / "dbt_project.yml").is_file():
+        logger.warning(
+            "dbt project not found at %s (missing dbt_project.yml); "
+            "the dbt resource will be skipped",
+            project_dir,
+        )
+        return resources
+
     try:
         from dagster_dbt import DbtCliResource
-
-        if shutil.which("dbt"):
-            resources["dbt"] = DbtCliResource(project_dir=str(DBT_PROJECT_DIR))
-        else:
-            logger.info("dbt executable not found; dbt assets will be skipped")
     except Exception as exc:
         logger.warning("DbtCliResource unavailable: %s", exc)
+        return resources
 
+    resources["dbt"] = DbtCliResource(project_dir=str(project_dir))
     return resources
