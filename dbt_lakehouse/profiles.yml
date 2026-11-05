@@ -1,0 +1,17 @@
+lakehouse:
+  target: dev
+  outputs:
+    dev:
+      type: spark
+      method: thrift
+      host: "{{ env_var('SPARK_THRIFT_HOST', 'spark-thrift') }}"
+      port: "{{ env_var('SPARK_THRIFT_PORT', '10000') | int }}"
+      user: "{{ env_var('SPARK_USER', 'spark') }}"
+      schema: gold
+      threads: 4
+      connect_retries: 5
+      connect_timeout: 10
+      # defaultCatalog=lakehouse is set on the Spark Thrift server itself
+      # (spark/conf/spark-defaults.conf). Delta is the physical format and
+      # UniForm emits Iceberg metadata. dbt-spark renders 2-level relations
+      # (schema.table) resolved in the lakehouse Delta catalog.

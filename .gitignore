@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Dagster
+.dagster/
+dagster.yaml
+storage/
+
+# dbt
+dbt_lakehouse/target/
+dbt_lakehouse/logs/
+dbt_lakehouse/dbt_packages/
+
+# Local env / IDE
+.env
+.idea/
+.vscode/
+.DS_Store
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# dbt anonymous usage id
+dbt_lakehouse/.user.yml

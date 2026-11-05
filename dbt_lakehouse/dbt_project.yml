@@ -1,0 +1,36 @@
+name: lakehouse
+version: "1.0.0"
+config-version: 2
+
+profile: lakehouse
+
+vars:
+  metricflow_time_spine_model: ref('metricflow_time_spine')
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets:
+  - target
+  - dbt_packages
+
+on-run-start:
+  - "{{ ensure_schema('bronze') }}"
+  - "{{ ensure_schema('gold') }}"
+
+models:
+  lakehouse:
+    gold:
+      +materialized: table
+      +schema: gold
+      +file_format: delta
+      +tags: ["gold"]
+      +post-hook:
+        - "ALTER TABLE {{ this }} SET TBLPROPERTIES ('delta.enableIcebergCompatV2'='true', 'delta.universalFormat.enabledFormats'='iceberg')"
+    semantic:
+      +materialized: table
+      +schema: gold
+      +file_format: delta
+      +tags: ["semantic"]
+      +post-hook:
+        - "ALTER TABLE {{ this }} SET TBLPROPERTIES ('delta.enableIcebergCompatV2'='true', 'delta.universalFormat.enabledFormats'='iceberg')"

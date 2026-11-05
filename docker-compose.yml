@@ -1,0 +1,171 @@
+# ---------------------------------------------------------------------------
+# Open Data Lakehouse: RustFS + Unity Catalog OSS + Spark Thrift + Dagster.
+# There is deliberately NO Hive Metastore: all table metadata lives in Unity
+# Catalog OSS and is reached through its Iceberg REST Catalog API.
+# ---------------------------------------------------------------------------
+name: ndr-lakehouse
+
+x-aws-env: &aws-env
+  AWS_ACCESS_KEY_ID: rustfsadmin
+  AWS_SECRET_ACCESS_KEY: rustfssecret
+  AWS_REGION: us-east-1
+  AWS_ENDPOINT_URL: http://rustfs:9000
+  S3_ENDPOINT_URL: http://rustfs:9000
+  S3_ACCESS_KEY_ID: rustfsadmin
+  S3_SECRET_ACCESS_KEY: rustfssecret
+  S3_REGION: us-east-1
+
+services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    hostname: rustfs
+    command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfssecret
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - rustfs-data:/data
+    restart: unless-stopped
+
+  init-buckets:
+    image: minio/mc:latest
+    depends_on:
+      rustfs:
+        condition: service_started
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfssecret
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until mc alias set rustfs http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY"; do
+          echo "waiting for RustFS..."; sleep 2;
+        done
+        mc mb --ignore-existing rustfs/landing-zone
+        mc mb --ignore-existing rustfs/lakehouse
+        echo "RustFS buckets ready: landing-zone, lakehouse"
+    restart: "no"
+
+  unity-catalog:
+    image: unitycatalog/unitycatalog:latest
+    hostname: unity-catalog
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *aws-env
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      UC_S3_ENDPOINT: http://rustfs:9000
+      UC_S3_BUCKET: lakehouse
+      UC_S3_PATH_STYLE_ACCESS: "true"
+    depends_on:
+      rustfs:
+        condition: service_started
+      init-buckets:
+        condition: service_completed_successfully
+    volumes:
+      - unity-catalog-data:/opt/unitycatalog/etc
+    restart: unless-stopped
+
+  spark-thrift:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    hostname: spark-thrift
+    environment:
+      <<: *aws-env
+    ports:
+      - "10000:10000"
+    depends_on:
+      rustfs:
+        condition: service_started
+      init-buckets:
+        condition: service_completed_successfully
+      unity-catalog:
+        condition: service_started
+    command:
+      - /opt/spark/bin/spark-submit
+      - --class
+      - org.apache.spark.sql.hive.thriftserver.HiveThriftServer2
+      - --master
+      - local[*]
+      - --name
+      - lakehouse-thrift
+      - --conf
+      - spark.hive.server2.thrift.bind.host=0.0.0.0
+      - --conf
+      - spark.hive.server2.thrift.port=10000
+      - --conf
+      - spark.sql.warehouse.dir=s3a://lakehouse/warehouse
+    restart: unless-stopped
+
+  dagster-webserver:
+    image: ndr-lakehouse-dagster:local
+    build:
+      context: .
+      dockerfile: Dockerfile.dagster
+    hostname: dagster-webserver
+    command:
+      - dagster-webserver
+      - -h
+      - 0.0.0.0
+      - -p
+      - "3000"
+      - -w
+      - /app/workspace.yaml
+    environment:
+      <<: *aws-env
+      UC_BASE_URL: http://unity-catalog:8080
+      LAKEHOUSE_BUCKET: lakehouse
+      LANDING_BUCKET: landing-zone
+      DAGSTER_HOME: /app/.dagster
+      DBT_PROFILES_DIR: /app/dbt_lakehouse
+      PYTHONPATH: /app/orchestration/ingestion/src
+    ports:
+      - "3000:3000"
+    volumes:
+      - dagster-home:/app/.dagster
+    depends_on:
+      rustfs:
+        condition: service_started
+      unity-catalog:
+        condition: service_started
+      spark-thrift:
+        condition: service_started
+    restart: unless-stopped
+
+  dagster-daemon:
+    image: ndr-lakehouse-dagster:local
+    build:
+      context: .
+      dockerfile: Dockerfile.dagster
+    hostname: dagster-daemon
+    command:
+      - dagster-daemon
+      - run
+      - -w
+      - /app/workspace.yaml
+    environment:
+      <<: *aws-env
+      UC_BASE_URL: http://unity-catalog:8080
+      LAKEHOUSE_BUCKET: lakehouse
+      LANDING_BUCKET: landing-zone
+      DAGSTER_HOME: /app/.dagster
+      DBT_PROFILES_DIR: /app/dbt_lakehouse
+      PYTHONPATH: /app/orchestration/ingestion/src
+    volumes:
+      - dagster-home:/app/.dagster
+    depends_on:
+      dagster-webserver:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  rustfs-data:
+  unity-catalog-data:
+  dagster-home:

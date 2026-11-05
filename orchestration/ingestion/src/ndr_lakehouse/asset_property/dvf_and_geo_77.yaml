@@ -1,0 +1,151 @@
+# ---------------------------------------------------------------------------
+# Showcase sources for the Seine-et-Marne (77) real-estate domain.
+#
+# This file is the ONLY place where source URLs, pagination, RustFS landing
+# paths, Unity Catalog namespaces and Iceberg table properties are declared.
+# Python code never mentions "communes", "DVF" or any source endpoint.
+# ---------------------------------------------------------------------------
+assets:
+  - name: communes_geo_77
+    description: >-
+      Commune referential for department 77 from the French government Geo API.
+      Loaded as a single native JSON payload.
+    group_name: bronze
+    owner: data-platform
+    tags:
+      domain: geo
+      layer: bronze
+      department: "77"
+    source_properties:
+      type: http
+      url: https://geo.api.gouv.fr/communes
+      method: GET
+      params:
+        codeDepartement: "77"
+        fields: nom,code,codeDepartement,codeRegion,codeEpci,population,centre,contour
+        format: json
+      headers:
+        Accept: application/json
+        User-Agent: lakehouse-ingestion/1.0
+      native_format: json
+      landing_bucket: landing-zone
+      s3_prefix: raw/geo/communes_77
+      pagination:
+        strategy: none
+    catalog_properties:
+      catalog_name: lakehouse
+      schema_name: bronze
+      table_name: communes_geo_77
+      write_mode: overwrite
+      primary_keys:
+        - code
+      dedup_order_by: _ingested_at
+      auto_evolve_schema: true
+      partition_by:
+        - code_departement
+      read_options:
+        multiLine: "true"
+      iceberg_tblproperties:
+        format-version: "2"
+        write.parquet.compression-codec: zstd
+        write.merge.mode: merge-on-read
+        comment: "Commune referential for department 77 (Geo API native JSON)"
+
+  - name: dvf_mutations_77
+    description: >-
+      DVF (Demandes de Valeurs Foncieres) mutation-level CSV.GZ for department
+      77. The compressed payload is preserved byte-for-byte in the landing zone.
+    group_name: bronze
+    owner: data-platform
+    tags:
+      domain: real-estate
+      layer: bronze
+      department: "77"
+    source_properties:
+      type: http
+      url: https://files.data.gouv.fr/geo-dvf/latest/csv/2024/departements/77.csv.gz
+      method: GET
+      headers:
+        Accept: application/gzip,text/csv
+        User-Agent: lakehouse-ingestion/1.0
+      native_format: csv.gz
+      landing_bucket: landing-zone
+      s3_prefix: raw/dvf/mutations_77
+      pagination:
+        strategy: none
+    catalog_properties:
+      catalog_name: lakehouse
+      schema_name: bronze
+      table_name: dvf_mutations_77
+      write_mode: append
+      primary_keys:
+        - id_mutation
+        - id_parcelle
+      dedup_order_by: date_mutation
+      auto_evolve_schema: true
+      partition_by:
+        - code_commune
+      read_options:
+        header: "true"
+        inferSchema: "true"
+        compression: gzip
+      iceberg_tblproperties:
+        format-version: "2"
+        write.parquet.compression-codec: zstd
+        write.merge.mode: merge-on-read
+        comment: "DVF mutations for department 77"
+
+  - name: dvf_lots_batis_77
+    description: >-
+      Lot-level DVF feed for department 77. Demonstrates the generic offset
+      pagination strategy: every native page is persisted as part_00001.json,
+      part_00002.json, ... before the Iceberg MERGE upsert.
+    group_name: bronze
+    owner: data-platform
+    tags:
+      domain: real-estate
+      layer: bronze
+      department: "77"
+    source_properties:
+      type: http
+      url: https://app.dvf.etalab.gouv.fr/api/mutations3/77001
+      method: GET
+      params:
+        limit: "100"
+        offset: "0"
+      headers:
+        Accept: application/json
+        User-Agent: lakehouse-ingestion/1.0
+      native_format: json
+      landing_bucket: landing-zone
+      s3_prefix: raw/dvf/lots_batis_77
+      records_json_path: mutations
+      pagination:
+        strategy: offset
+        offset_param: offset
+        offset_start: 0
+        limit_param: limit
+        limit_value: 100
+        records_json_path: mutations
+        max_pages: 50
+        rate_limit_sleep_sec: 0.2
+    catalog_properties:
+      catalog_name: lakehouse
+      schema_name: bronze
+      table_name: dvf_lots_batis_77
+      write_mode: merge
+      primary_keys:
+        - id_mutation
+        - id_parcelle
+      dedup_order_by: date_mutation
+      auto_evolve_schema: true
+      partition_by:
+        - code_commune
+      read_options:
+        multiLine: "true"
+      iceberg_tblproperties:
+        format-version: "2"
+        write.parquet.compression-codec: zstd
+        write.merge.mode: merge-on-read
+        write.distribution-mode: hash
+        comment: "DVF lot-level mutations for department 77"
