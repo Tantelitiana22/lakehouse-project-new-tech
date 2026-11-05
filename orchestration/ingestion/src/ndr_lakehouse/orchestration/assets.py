@@ -164,7 +164,9 @@ def _landing_asset(config: AssetConfig) -> AssetsDefinition:
         "tags": {**config.tags, "owner": config.owner, "layer": "landing"},
     }
 
-    if config.handler is None:
+    # Same predicate as `_resolve_asset_handler`: an empty or whitespace-only
+    # `handler:` is no handler, so it must take the platform-only path.
+    if not config.handler:
 
         @asset(**common)
         def _landing_default(
@@ -265,7 +267,8 @@ def _iceberg_asset(config: AssetConfig, landing_key: AssetKey) -> AssetsDefiniti
         },
     }
 
-    if config.handler is None:
+    # Same predicate as `_resolve_asset_handler`; see `_landing_asset`.
+    if not config.handler:
 
         @asset(**common)
         def _iceberg_default(

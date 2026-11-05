@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
+import pytest
 import yaml
 from dagster import AssetKey, materialize
 from ndr_lakehouse.iceberg.resource import SparkIcebergResource
 from ndr_lakehouse.landing.resource import NativeIngestorResource
 from ndr_lakehouse.orchestration.assets import (
+    _IcebergAdapter,
+    _LandingAdapter,
     build_ingestion_assets_from_yaml,
 )
 from ndr_lakehouse.orchestration.dbt_source_sync import (
@@ -20,15 +24,27 @@ from ndr_lakehouse.provisioning.resource import (
 )
 
 HANDLER_CALLS: list[str] = []
+HANDLER_CONTEXTS: dict[str, Any] = {}
 
 
 class _RecordingHandler:
+    """Record each call and the ``HandlerContext`` it received.
+
+    The assertions stay minimal because this handler is invoked by both ops of
+    the pair; ``landing`` is a real adapter in both, so only the settings and
+    the port wiring are asserted here.
+    """
+
     def land(self, context, config):
         HANDLER_CALLS.append("land")
+        HANDLER_CONTEXTS["land"] = context
+        assert context.settings["asset_name"] == config.name
         return "s3a://custom/output"
 
     def load(self, context, config, landing_uri):
         HANDLER_CALLS.append("load")
+        HANDLER_CONTEXTS["load"] = context
+        assert context.settings["asset_name"] == config.name
         return {"row_count": 7}
 
 
@@ -123,6 +139,7 @@ def test_materialize_landing_and_iceberg_assets_in_memory(mocker, sample_asset_c
 
 def test_custom_handler_overrides_landing_and_merges_load(mocker, sample_asset_config):
     HANDLER_CALLS.clear()
+    HANDLER_CONTEXTS.clear()
     mocker.patch.object(UnityCatalogProvisionerResource, "ensure_buckets", return_value={})
     mocker.patch.object(
         UnityCatalogProvisionerResource, "ensure_catalog_and_schema", return_value={}
@@ -155,6 +172,15 @@ def test_custom_handler_overrides_landing_and_merges_load(mocker, sample_asset_c
     assert metadata["row_count"].value == 7  # handler dict wins
     assert metadata["table"].value == "lakehouse.bronze.demo_table"
 
+    # The recorded HandlerContext is real, complete and read-only.
+    assert set(HANDLER_CONTEXTS) == {"land", "load"}
+    for ctx in HANDLER_CONTEXTS.values():
+        assert ctx.settings["full_table_name"] == config.catalog_properties.full_table_name
+        assert isinstance(ctx.landing, _LandingAdapter)
+        assert isinstance(ctx.iceberg, _IcebergAdapter)
+    with pytest.raises(TypeError):
+        HANDLER_CONTEXTS["land"].settings["asset_name"] = "mutated"
+
 
 def test_asset_without_handler_uses_platform_path(mocker, sample_asset_config):
     mocker.patch.object(UnityCatalogProvisionerResource, "ensure_buckets", return_value={})
@@ -166,6 +192,18 @@ def test_asset_without_handler_uses_platform_path(mocker, sample_asset_config):
 
     assets = build_ingestion_assets_from_yaml(configs=[sample_asset_config])
     landing_asset = next(a for a in assets if AssetKey(["landing", "demo_source"]) in a.keys)
+    iceberg_asset = next(
+        a for a in assets if AssetKey(["lakehouse", "bronze", "demo_table"]) in a.keys
+    )
+
+    # Lock both defaults, not just the landing one: the materialisation test
+    # below supplies all three resources, so a resource leaking into the
+    # iceberg default would still pass there.
+    assert sorted(landing_asset.op.required_resource_keys) == [
+        "native_ingestor",
+        "uc_provisioner",
+    ]
+    assert sorted(iceberg_asset.op.required_resource_keys) == ["spark_iceberg"]
 
     result = materialize(
         [landing_asset],
@@ -176,3 +214,25 @@ def test_asset_without_handler_uses_platform_path(mocker, sample_asset_config):
     )
     assert result.success
     NativeIngestorResource.ingest.assert_called_once_with(sample_asset_config)
+
+
+def test_empty_handler_string_uses_platform_path(sample_asset_config):
+    """An empty or whitespace-only ``handler:`` must take the no-handler branch."""
+
+    config = sample_asset_config.model_copy(update={"handler": ""})
+    assert config.handler == ""
+    # `_StrictModel` strips whitespace, so a blank string normalises to "".
+    blank = type(config).model_validate({**config.model_dump(), "handler": "   "})
+    assert blank.handler == ""
+
+    assets = build_ingestion_assets_from_yaml(configs=[config])
+    landing_asset = next(a for a in assets if AssetKey(["landing", "demo_source"]) in a.keys)
+    iceberg_asset = next(
+        a for a in assets if AssetKey(["lakehouse", "bronze", "demo_table"]) in a.keys
+    )
+
+    assert sorted(landing_asset.op.required_resource_keys) == [
+        "native_ingestor",
+        "uc_provisioner",
+    ]
+    assert sorted(iceberg_asset.op.required_resource_keys) == ["spark_iceberg"]
