@@ -2,6 +2,7 @@
 
 from ndr_lakehouse.domain.errors import (
     AmbiguousDefaultUseCaseError,
+    DuplicateAssetNameError,
     LakehouseError,
     RetryExhaustedError,
     UnsupportedPaginationStrategyError,
@@ -20,6 +21,7 @@ from ndr_lakehouse.domain.ports import (
 __all__ = [
     "AmbiguousDefaultUseCaseError",
     "CatalogGateway",
+    "DuplicateAssetNameError",
     "HttpResponse",
     "HttpTransport",
     "LakehouseError",
