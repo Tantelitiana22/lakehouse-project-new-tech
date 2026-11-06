@@ -24,12 +24,9 @@ from ndr_lakehouse.domain.ports import HandlerContext, UseCaseHandler
 from ndr_lakehouse.iceberg.resource import SparkIcebergResource
 from ndr_lakehouse.landing.resource import NativeIngestorResource
 from ndr_lakehouse.orchestration.handlers import NullHandler, resolve_handler
-from ndr_lakehouse.orchestration.paths import ASSET_PROPERTY_DIR
 from ndr_lakehouse.provisioning.resource import UnityCatalogProvisionerResource
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_ASSET_PROPERTY_DIR = ASSET_PROPERTY_DIR
 
 
 class _LandingAdapter:
@@ -96,16 +93,13 @@ def _handler_settings(config: AssetConfig) -> Mapping[str, str]:
 
 
 def discover_ingestion_configs(
-    asset_dir: str | Path | None = None,
+    asset_dir: str | Path,
     *,
     recursive: bool = False,
 ) -> list[AssetConfig]:
     """Discover and validate every non-platform YAML source definition."""
 
-    return discover_asset_configs(
-        asset_dir or DEFAULT_ASSET_PROPERTY_DIR,
-        recursive=recursive,
-    )
+    return discover_asset_configs(asset_dir, recursive=recursive)
 
 
 def _land(

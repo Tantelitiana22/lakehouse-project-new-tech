@@ -315,6 +315,28 @@ def test_resource_bundle_warns_when_dbt_project_is_missing(write_use_case, caplo
     assert any("dbt_project.yml" in record.message for record in caplog.records)
 
 
+def test_build_definitions_requires_an_explicit_or_default_use_case(tmp_path):
+    from ndr_lakehouse.domain.errors import UseCaseNotFoundError
+    from ndr_lakehouse.orchestration.definitions import build_definitions
+
+    with pytest.raises(UseCaseNotFoundError):
+        build_definitions(root=tmp_path)
+
+
+def test_build_definitions_builds_assets_from_the_manifest(write_use_case, asset_payload):
+    from ndr_lakehouse.orchestration.definitions import build_definitions
+
+    manifest = write_use_case("demo")
+    (manifest.parent / "assets" / "demo.yaml").write_text(
+        yaml.safe_dump(asset_payload), encoding="utf-8"
+    )
+
+    definitions = build_definitions(
+        "demo", root=manifest.parent.parent, register_dbt=False, sync_sources=False
+    )
+    assert AssetKey(["landing", "demo_source"]) in definitions.resolve_all_asset_keys()
+
+
 def test_library_no_longer_exposes_defs():
     import ndr_lakehouse
 
