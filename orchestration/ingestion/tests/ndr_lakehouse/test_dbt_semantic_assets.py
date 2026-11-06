@@ -28,3 +28,5 @@ def test_generic_module_has_no_use_case_constants():
     import ndr_lakehouse.orchestration.dbt_assets as mod
 
     assert not hasattr(mod, "GOLD_MODEL_NAMES")
+    assert not hasattr(mod, "GOLD_ASSET_KEYS")
+    assert not hasattr(mod, "metricflow_semantic_validation")
