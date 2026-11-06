@@ -10,8 +10,6 @@ from typing import Any
 
 from dagster import AssetKey, AssetsDefinition, MetadataValue, asset
 
-from ndr_lakehouse.orchestration.paths import DBT_MANIFEST_PATH, DBT_PROJECT_DIR
-
 logger = logging.getLogger(__name__)
 
 
@@ -21,8 +19,12 @@ def build_dbt_assets(
 ) -> list[Any]:
     """Build dbt assets when a manifest exists; otherwise return ``[]``."""
 
-    resolved_manifest = Path(manifest_path or DBT_MANIFEST_PATH)
-    resolved_project = Path(project_dir or DBT_PROJECT_DIR)
+    if manifest_path is None or project_dir is None:
+        logger.info("dbt assets need both a manifest path and a project dir; skipping")
+        return []
+
+    resolved_manifest = Path(manifest_path)
+    resolved_project = Path(project_dir)
     if not resolved_manifest.exists():
         logger.info(
             "dbt manifest not found at %s; dbt assets are not registered yet",

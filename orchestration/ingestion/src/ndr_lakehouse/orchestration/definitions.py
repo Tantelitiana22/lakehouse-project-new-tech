@@ -1,44 +1,66 @@
-"""Dagster Definitions assembly for the Open Data Lakehouse."""
+"""Dagster Definitions assembly for one use case."""
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from dagster import Definitions
 
+from ndr_lakehouse.asset_property.use_case import resolve_use_case
 from ndr_lakehouse.orchestration.assets import build_ingestion_assets_from_yaml
-from ndr_lakehouse.orchestration.dbt_assets import build_dbt_assets
-from ndr_lakehouse.orchestration.dbt_source_sync import sync_dbt_sources
-from ndr_lakehouse.orchestration.paths import (
-    ASSET_PROPERTY_DIR,
-    DBT_MANIFEST_PATH,
-    DBT_PROJECT_DIR,
-    DBT_SOURCES_PATH,
+from ndr_lakehouse.orchestration.dbt_assets import (
+    build_dbt_assets,
+    build_metricflow_asset,
 )
+from ndr_lakehouse.orchestration.dbt_source_sync import sync_dbt_sources
+from ndr_lakehouse.orchestration.paths import DEFAULT_USE_CASE_ROOT
+from ndr_lakehouse.orchestration.resources import build_resource_bundle
 
 logger = logging.getLogger(__name__)
 
 
-def build_definitions() -> Definitions:
-    """Assemble ingestion, dbt and semantic assets into one lineage graph."""
+def build_definitions(
+    use_case: str | Path | None = None,
+    *,
+    register_dbt: bool = True,
+    sync_sources: bool = True,
+    root: Path | None = None,
+) -> Definitions:
+    """Assemble one use case's ingestion, dbt and semantic assets.
 
-    if ASSET_PROPERTY_DIR.exists():
+    The use case is resolved from ``root`` (default: the repository's
+    ``use_case/`` directory) by name, or by the single manifest marked
+    ``default: true``. There is no implicit asset directory: everything the
+    graph needs comes from the manifest.
+    """
+
+    config = resolve_use_case(root or DEFAULT_USE_CASE_ROOT, use_case)
+
+    if sync_sources:
         try:
             sync_dbt_sources(
-                asset_dir=ASSET_PROPERTY_DIR,
-                output_path=DBT_SOURCES_PATH,
-                source_label="orchestration/ingestion/src/ndr_lakehouse/asset_property/*.yaml",
+                asset_dir=config.assets_path,
+                output_path=config.dbt_sources_file,
+                source_label=f"{config.assets_path}/*.yaml",
             )
         except OSError as exc:
             logger.warning("Unable to synchronise dbt sources: %s", exc)
 
-    ingestion_assets = build_ingestion_assets_from_yaml(asset_dir=ASSET_PROPERTY_DIR)
-    dbt_assets = build_dbt_assets(
-        manifest_path=DBT_MANIFEST_PATH,
-        project_dir=DBT_PROJECT_DIR,
-    )
-    assets = [*ingestion_assets, *dbt_assets]
+    assets = build_ingestion_assets_from_yaml(asset_dir=config.assets_path, recursive=False)
 
-    # TODO(Task 8): pass resources=build_resource_bundle(use_case, ...) once
-    # build_definitions takes a use case.
-    return Definitions(assets=assets)
+    if register_dbt and (config.dbt_project_path / "dbt_project.yml").is_file():
+        assets = [
+            *assets,
+            *build_dbt_assets(config.dbt_manifest_path, config.dbt_project_path),
+            build_metricflow_asset(
+                gold_models=config.gold_models,
+                dbt_project_dir=config.dbt_project_path,
+                metric=config.semantic_metric,
+            ),
+        ]
+
+    return Definitions(
+        assets=assets,
+        resources=build_resource_bundle(config, register_dbt=register_dbt),
+    )
