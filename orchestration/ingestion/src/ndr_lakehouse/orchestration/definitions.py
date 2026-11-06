@@ -7,10 +7,7 @@ import logging
 from dagster import Definitions
 
 from ndr_lakehouse.orchestration.assets import build_ingestion_assets_from_yaml
-from ndr_lakehouse.orchestration.dbt_assets import (
-    build_dbt_assets,
-    metricflow_semantic_validation,
-)
+from ndr_lakehouse.orchestration.dbt_assets import build_dbt_assets
 from ndr_lakehouse.orchestration.dbt_source_sync import sync_dbt_sources
 from ndr_lakehouse.orchestration.paths import (
     ASSET_PROPERTY_DIR,
@@ -30,6 +27,7 @@ def build_definitions() -> Definitions:
             sync_dbt_sources(
                 asset_dir=ASSET_PROPERTY_DIR,
                 output_path=DBT_SOURCES_PATH,
+                source_label="orchestration/ingestion/src/ndr_lakehouse/asset_property/*.yaml",
             )
         except OSError as exc:
             logger.warning("Unable to synchronise dbt sources: %s", exc)
@@ -39,7 +37,7 @@ def build_definitions() -> Definitions:
         manifest_path=DBT_MANIFEST_PATH,
         project_dir=DBT_PROJECT_DIR,
     )
-    assets = [*ingestion_assets, *dbt_assets, metricflow_semantic_validation]
+    assets = [*ingestion_assets, *dbt_assets]
 
     # TODO(Task 8): pass resources=build_resource_bundle(use_case, ...) once
     # build_definitions takes a use case.
