@@ -31,9 +31,20 @@ platform:
 
 @pytest.fixture
 def write_use_case(tmp_path):
-    """Create ``<root>/<name>/use_case.yaml`` plus a minimal platform file."""
+    """Create ``<root>/<name>/use_case.yaml`` plus a minimal platform file.
 
-    def _write(name: str, *, default: bool = False, root: Path | None = None) -> Path:
+    ``dbt_project_dir`` defaults to the repository's real dbt project, which
+    resolves outside ``tmp_path``. Pass a relative path (e.g. ``"dbt_project"``)
+    to keep a test hermetic inside ``tmp_path``.
+    """
+
+    def _write(
+        name: str,
+        *,
+        default: bool = False,
+        root: Path | None = None,
+        dbt_project_dir: str = "../../dbt_lakehouse",
+    ) -> Path:
         base = root or tmp_path
         directory = base / name
         assets = directory / "assets"
@@ -46,7 +57,7 @@ use_case:
   name: {name}
   assets_dir: assets
   platform_file: assets/platform.yaml
-  dbt_project_dir: ../../dbt_lakehouse
+  dbt_project_dir: {dbt_project_dir}
   dbt_sources_path: models/staging/_sources.yml
   gold_models: [dim_a]
   semantic_metric: m
