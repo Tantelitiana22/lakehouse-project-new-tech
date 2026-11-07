@@ -59,10 +59,15 @@ services.
 ## Repository layout
 
 ```
+use_case/                           # Dagster entrypoint + situated configuration
+├── __init__.py                     # module-level defs = build_definitions()
+└── real_estate_77/
+    ├── use_case.yaml               # manifest: assets dir, platform, dbt, gold models
+    └── assets/                     # platform.yaml + source YAMLs for this use case
 orchestration/ingestion/
 ├── src/ndr_lakehouse/
-│   ├── __init__.py                 # re-exports defs from orchestration/definitions.py
-│   ├── asset_property/             # platform.yaml + source YAMLs + Pydantic v2 contracts
+│   ├── __init__.py                 # generic library package
+│   ├── asset_property/             # Pydantic v2 contracts and YAML validation
 │   ├── domain/                     # ports (Protocols) and domain errors
 │   ├── infrastructure/             # boto3, httpx and Unity Catalog REST adapters
 │   ├── landing/                    # extraction + native-format landing zone

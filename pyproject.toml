@@ -44,7 +44,7 @@ packages = ["orchestration/ingestion/src/ndr_lakehouse"]
 
 [tool.pytest.ini_options]
 testpaths = ["orchestration/ingestion/tests/ndr_lakehouse"]
-pythonpath = ["orchestration/ingestion/src"]
+pythonpath = ["orchestration/ingestion/src", "."]
 addopts = [
     "-ra",
     "--strict-markers",
