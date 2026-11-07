@@ -29,6 +29,21 @@ HANDLER_CALLS: list[str] = []
 HANDLER_CONTEXTS: dict[str, Any] = {}
 
 
+def _stub_dbt_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Put a no-op ``dbt`` executable on PATH.
+
+    ``DbtCliResource`` validates that a ``dbt`` binary exists at construction
+    time, and this suite has no dbt runtime.
+    """
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "dbt"
+    stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+
 class _RecordingHandler:
     """Record each call and the ``HandlerContext`` it received.
 
@@ -290,12 +305,7 @@ def test_resource_bundle_registers_dbt_when_project_exists(write_use_case, tmp_p
 
     # dagster-dbt validates that a `dbt` executable is on PATH at construction
     # time; this suite has no dbt runtime, so provide a stub.
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    stub = bin_dir / "dbt"
-    stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    stub.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    _stub_dbt_on_path(tmp_path, monkeypatch)
 
     config = load_use_case_config(manifest)
     bundle = build_resource_bundle(config, register_dbt=True)
@@ -335,6 +345,59 @@ def test_build_definitions_builds_assets_from_the_manifest(write_use_case, asset
         "demo", root=manifest.parent.parent, register_dbt=False, sync_sources=False
     )
     assert AssetKey(["landing", "demo_source"]) in definitions.resolve_all_asset_keys()
+
+
+def test_build_definitions_skips_metricflow_without_a_compiled_manifest(
+    write_use_case, asset_payload, tmp_path, monkeypatch
+):
+    from ndr_lakehouse.orchestration.definitions import build_definitions
+
+    # A dbt project exists but ``target/manifest.json`` was never compiled. The
+    # metricflow asset's deps would point at gold models no asset defines, so it
+    # must be left out alongside the dbt assets it depends on.
+    manifest = write_use_case("demo", dbt_project_dir="dbt_project")
+    (manifest.parent / "assets" / "demo.yaml").write_text(
+        yaml.safe_dump(asset_payload), encoding="utf-8"
+    )
+    project_dir = tmp_path / "demo" / "dbt_project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "dbt_project.yml").write_text("name: demo\n", encoding="utf-8")
+    _stub_dbt_on_path(tmp_path, monkeypatch)
+
+    definitions = build_definitions(
+        "demo",
+        root=manifest.parent.parent,
+        register_dbt=True,
+        sync_sources=False,
+    )
+    keys = definitions.resolve_all_asset_keys()
+    assert AssetKey("metricflow_semantic_validation") not in keys
+    assert AssetKey("dim_a") not in keys
+    # The ingestion assets from the manifest are still registered.
+    assert AssetKey(["landing", "demo_source"]) in keys
+
+
+def test_build_definitions_does_not_touch_dbt_when_register_dbt_is_false(
+    write_use_case, asset_payload, tmp_path
+):
+    from ndr_lakehouse.orchestration.definitions import build_definitions
+
+    # ``sync_sources`` defaults to True, but a dbt-free graph must not rewrite
+    # the dbt project on disk.
+    manifest = write_use_case("demo", dbt_project_dir="dbt_project")
+    (manifest.parent / "assets" / "demo.yaml").write_text(
+        yaml.safe_dump(asset_payload), encoding="utf-8"
+    )
+    sources_file = tmp_path / "demo" / "dbt_project" / "models" / "staging" / "_sources.yml"
+
+    build_definitions("demo", root=manifest.parent.parent, register_dbt=False)
+
+    assert not sources_file.exists()
+
+
+def test_build_ingestion_assets_requires_an_asset_dir_or_configs():
+    with pytest.raises(ValueError):
+        build_ingestion_assets_from_yaml()
 
 
 def test_library_no_longer_exposes_defs():
