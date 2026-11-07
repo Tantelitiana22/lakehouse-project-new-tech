@@ -26,8 +26,9 @@ def build_dbt_assets(
     resolved_manifest = Path(manifest_path)
     resolved_project = Path(project_dir)
     if not resolved_manifest.exists():
-        logger.info(
-            "dbt manifest not found at %s; dbt assets are not registered yet",
+        logger.warning(
+            "dbt manifest not found at %s; dbt assets are not registered yet. "
+            "Run `dbt parse` to compile it.",
             resolved_manifest,
         )
         return []

@@ -33,16 +33,24 @@ def build_definitions(
     ``use_case/`` directory) by name, or by the single manifest marked
     ``default: true``. There is no implicit asset directory: everything the
     graph needs comes from the manifest.
+
+    ``sync_sources`` only has an effect when ``register_dbt`` is true: the
+    generated ``_sources.yml`` is consumed by dbt, so a dbt-free graph does not
+    rewrite the dbt project on disk.
     """
 
     config = resolve_use_case(root or DEFAULT_USE_CASE_ROOT, use_case)
 
-    if sync_sources:
+    if sync_sources and register_dbt:
+        try:
+            asset_label = config.assets_path.relative_to(DEFAULT_USE_CASE_ROOT)
+        except ValueError:
+            asset_label = config.assets_path
         try:
             sync_dbt_sources(
                 asset_dir=config.assets_path,
                 output_path=config.dbt_sources_file,
-                source_label=f"{config.assets_path}/*.yaml",
+                source_label=f"{asset_label}/*.yaml",
             )
         except OSError as exc:
             logger.warning("Unable to synchronise dbt sources: %s", exc)
@@ -50,15 +58,20 @@ def build_definitions(
     assets = build_ingestion_assets_from_yaml(asset_dir=config.assets_path, recursive=False)
 
     if register_dbt and (config.dbt_project_path / "dbt_project.yml").is_file():
-        assets = [
-            *assets,
-            *build_dbt_assets(config.dbt_manifest_path, config.dbt_project_path),
-            build_metricflow_asset(
-                gold_models=config.gold_models,
-                dbt_project_dir=config.dbt_project_path,
-                metric=config.semantic_metric,
-            ),
-        ]
+        dbt_assets = build_dbt_assets(
+            manifest_path=config.dbt_manifest_path,
+            project_dir=config.dbt_project_path,
+        )
+        if dbt_assets:
+            assets = [
+                *assets,
+                *dbt_assets,
+                build_metricflow_asset(
+                    gold_models=config.gold_models,
+                    dbt_project_dir=config.dbt_project_path,
+                    metric=config.semantic_metric,
+                ),
+            ]
 
     return Definitions(
         assets=assets,
