@@ -126,6 +126,8 @@ services:
       LANDING_BUCKET: landing-zone
       DAGSTER_HOME: /app/.dagster
       DBT_PROFILES_DIR: /app/dbt_lakehouse
+      # Must match the image's ENV PYTHONPATH: compose wins, so editing only the
+      # Dockerfile would leave this override in place.
       PYTHONPATH: /app/orchestration/ingestion/src:/app
     ports:
       - "3000:3000"
@@ -158,6 +160,7 @@ services:
       LANDING_BUCKET: landing-zone
       DAGSTER_HOME: /app/.dagster
       DBT_PROFILES_DIR: /app/dbt_lakehouse
+      # Must match the image's ENV PYTHONPATH; see dagster-webserver above.
       PYTHONPATH: /app/orchestration/ingestion/src:/app
     volumes:
       - dagster-home:/app/.dagster
