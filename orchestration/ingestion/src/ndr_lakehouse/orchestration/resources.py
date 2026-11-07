@@ -78,11 +78,25 @@ def build_resource_bundle(
         )
         return resources
 
-    try:
-        from dagster_dbt import DbtCliResource
-    except Exception as exc:
-        logger.warning("DbtCliResource unavailable: %s", exc)
+    # The dbt/ManifestFlow assets read the compiled manifest for their graph, so
+    # a resource without one would only half-wire dbt: present in the bundle but
+    # feeding no assets. Require it here and keep the bundle the single source of
+    # truth for "dbt is wired".
+    if not use_case.dbt_manifest_path.is_file():
+        logger.warning(
+            "dbt manifest not found at %s; the dbt resource will be skipped. "
+            "Run `dbt parse` to compile it.",
+            use_case.dbt_manifest_path,
+        )
         return resources
 
-    resources["dbt"] = DbtCliResource(project_dir=str(project_dir))
+    # dbt is an optional extra: the library must still build a graph in an
+    # environment where it (or its adapter) is not installed.
+    try:
+        from dagster_dbt import DbtCliResource
+
+        resources["dbt"] = DbtCliResource(project_dir=str(project_dir))
+    except Exception as exc:
+        logger.warning("DbtCliResource unavailable: %s", exc)
+
     return resources

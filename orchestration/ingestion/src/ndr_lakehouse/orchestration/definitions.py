@@ -56,8 +56,14 @@ def build_definitions(
             logger.warning("Unable to synchronise dbt sources: %s", exc)
 
     assets = build_ingestion_assets_from_yaml(asset_dir=config.assets_path, recursive=False)
+    resources = build_resource_bundle(config, register_dbt=register_dbt)
 
-    if register_dbt and (config.dbt_project_path / "dbt_project.yml").is_file():
+    # The resource bundle is the single source of truth for "dbt is wired": it
+    # already required the project file, the compiled manifest and a usable
+    # ``DbtCliResource``. Deriving the assets from it keeps the bundle and the
+    # graph in agreement, so a half-configured dbt never yields assets whose
+    # upstream resources are missing (or a semantic asset with phantom deps).
+    if "dbt" in resources:
         dbt_assets = build_dbt_assets(
             manifest_path=config.dbt_manifest_path,
             project_dir=config.dbt_project_path,
@@ -73,7 +79,4 @@ def build_definitions(
                 ),
             ]
 
-    return Definitions(
-        assets=assets,
-        resources=build_resource_bundle(config, register_dbt=register_dbt),
-    )
+    return Definitions(assets=assets, resources=resources)
