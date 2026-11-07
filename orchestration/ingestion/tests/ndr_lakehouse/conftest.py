@@ -33,9 +33,10 @@ platform:
 def write_use_case(tmp_path):
     """Create ``<root>/<name>/use_case.yaml`` plus a minimal platform file.
 
-    ``dbt_project_dir`` defaults to the repository's real dbt project, which
-    resolves outside ``tmp_path``. Pass a relative path (e.g. ``"dbt_project"``)
-    to keep a test hermetic inside ``tmp_path``.
+    Every path stays inside ``tmp_path``: ``dbt_project_dir`` defaults to a
+    sibling directory that the fixture does not create, so a test that needs a
+    dbt project must build one itself. Tests asserting dbt behaviour pass an
+    explicit value.
     """
 
     def _write(
@@ -43,7 +44,7 @@ def write_use_case(tmp_path):
         *,
         default: bool = False,
         root: Path | None = None,
-        dbt_project_dir: str = "../../dbt_lakehouse",
+        dbt_project_dir: str = "dbt_project",
     ) -> Path:
         base = root or tmp_path
         directory = base / name

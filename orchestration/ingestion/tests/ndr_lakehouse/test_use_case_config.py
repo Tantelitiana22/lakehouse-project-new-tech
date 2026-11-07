@@ -22,8 +22,11 @@ def test_manifest_paths_resolve_against_manifest_directory(tmp_path, write_use_c
 def test_dbt_sources_path_resolves_against_dbt_project_dir(tmp_path, write_use_case):
     manifest = write_use_case("demo")
     config = load_use_case_config(manifest)
-    # dbt_project_dir is manifest-relative, dbt_sources_path is dbt_project_dir-relative
-    expected = (tmp_path / "demo" / "../../dbt_lakehouse/models/staging/_sources.yml").resolve()
+    # dbt_project_dir is manifest-relative, dbt_sources_path is dbt_project_dir-
+    # relative. The fixture keeps both inside tmp_path, so this asserts the
+    # asymmetry without reaching into the repository.
+    project = tmp_path / "demo" / "dbt_project"
+    expected = (project / "models" / "staging" / "_sources.yml").resolve()
     assert config.dbt_sources_file == expected
 
 
