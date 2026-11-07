@@ -43,7 +43,12 @@ def build_definitions(
 
     if sync_sources and register_dbt:
         try:
-            asset_label = config.assets_path.relative_to(DEFAULT_USE_CASE_ROOT)
+            # Repo-relative so the generated header is stable across checkouts,
+            # but keep the ``use_case/`` prefix so the label still says where the
+            # YAML lives.
+            asset_label = DEFAULT_USE_CASE_ROOT.name / config.assets_path.relative_to(
+                DEFAULT_USE_CASE_ROOT
+            )
         except ValueError:
             asset_label = config.assets_path
         try:
