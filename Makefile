@@ -33,10 +33,10 @@ ps:
 	$(COMPOSE) ps
 
 dagster-dev:
-	$(UV) run dagster dev -m ndr_lakehouse -p 3000
+	$(UV) run dagster dev -m use_case -p 3000
 
 ingest:
-	$(COMPOSE) exec dagster-webserver dagster asset materialize -m ndr_lakehouse --select '*'
+	$(COMPOSE) exec dagster-webserver dagster asset materialize -m use_case --select '*'
 
 dbt-parse:
 	$(COMPOSE) exec dagster-webserver dbt parse --project-dir /app/dbt_lakehouse --profiles-dir /app/dbt_lakehouse
