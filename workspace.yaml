@@ -1,2 +1,8 @@
+# ``use_case`` lives at the repository root, which is not on the interpreter path
+# when Dagster imports a code location (its loader removes ``sys.path[0]``).
+# ``working_directory`` is Dagster's documented way to make a repo-local module
+# importable; the container runs with WORKDIR /app, so "." resolves to the root.
 load_from:
-  - python_module: ndr_lakehouse
+  - python_module:
+      module_name: use_case
+      working_directory: .

@@ -1,0 +1,10 @@
+use_case:
+  name: real_estate_77
+  description: Seine-et-Marne (77) real-estate and commune referential
+  assets_dir: assets
+  platform_file: assets/platform.yaml
+  dbt_project_dir: ../../dbt_lakehouse
+  dbt_sources_path: models/staging/_sources.yml
+  gold_models: [dim_communes, fct_mutations, fct_lots_batis]
+  semantic_metric: prix_moyen_m2
+  default: true
