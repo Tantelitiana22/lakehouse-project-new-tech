@@ -92,8 +92,8 @@ dbt_lakehouse/                      # dedicated dbt + MetricFlow project
 
 ## Declarative contract
 
-Every file in `asset_property/` (except `platform.yaml`) declares one or more
-assets with two blocks:
+Every YAML file in a use case's `assets/` directory (except `platform.yaml`)
+declares one or more assets with two blocks:
 
 * `source_properties` — URL, method, params, headers, native format, RustFS
   landing bucket/prefix and pagination strategy (`none`, `page_number`,
@@ -124,15 +124,14 @@ use_case/
     ├── use_case.yaml           # manifest
     └── assets/
         ├── platform.yaml
-        ├── dvf_mutations_77.yaml
-        └── ...
+        └── dvf_and_geo_77.yaml # declares communes_geo_77, dvf_mutations_77, dvf_lots_batis_77
 ```
 
 The manifest keys (`ndr_lakehouse.asset_property.use_case.UseCaseConfig`):
 
 | Key | Meaning |
 |---|---|
-| `name` | Use-case identifier; also the Dagster code-location name. |
+| `name` | Use-case identifier, used by `resolve_use_case` to select a manifest. |
 | `description` | Free text, shown in tooling. |
 | `assets_dir` | Directory holding the per-asset YAML. Relative to the manifest. |
 | `platform_file` | Shared platform/Spark settings YAML. Relative to the manifest. |
@@ -140,45 +139,56 @@ The manifest keys (`ndr_lakehouse.asset_property.use_case.UseCaseConfig`):
 | `dbt_sources_path` | Where `_sources.yml` is regenerated inside that project. |
 | `gold_models` | Gold model names to register as Dagster dbt assets. |
 | `semantic_metric` | MetricFlow metric to expose as an asset. |
-| `default` | Marks the use case loaded when none is named explicitly. |
+| `default` | Marks the manifest loaded when none is named explicitly. |
+
+The Dagster code location is *not* named after the use case — Dagster names it
+after the module, so it appears as `use_case` unless `workspace.yaml` sets an
+explicit `location_name`.
 
 `use_case/__init__.py` calls `build_definitions()` at import time, which resolves
 the default use case, builds the ingestion assets from its YAML, provisions the
-Spark/ingestion/UC resources and — if `dbt_lakehouse/target/manifest.json` exists
-— registers the dbt and semantic assets too.
+Spark/ingestion/UC resources and — when the dbt project and its compiled
+`target/manifest.json` are both present — registers the dbt and semantic assets
+too.
 
 ### Escape hatch: per-use-case Python
 
 When a source needs behaviour the YAML cannot express, do not fork the library.
 Give the asset a `handler` — a *top-level* key next to `name` and
-`source_properties`, taking a `module:Class` dotted path:
+`source_properties` in an entry of the file's `assets:` list — taking a
+`module:Class` reference (a **colon**, and a class, not a function):
 
 ```yaml
-name: dvf_mutations_77
-handler: real_estate_77.handlers.MutationsHandler
-source_properties:
-  ...
-catalog_properties:
-  ...
+assets:
+  - name: dvf_mutations_77
+    handler: use_case.real_estate_77.handlers:MutationsHandler
+    source_properties:
+      ...
+    catalog_properties:
+      ...
 ```
 
-The named class is imported and instantiated with no arguments, and must satisfy
-`ndr_lakehouse.domain.ports.UseCaseHandler` — `land(context, config)` returning a
-landing URI or `None`, and `load(context, config, landing_uri)` returning a
-summary dict or `None`. The two halves behave differently: a `None` from `land`
-falls back to the generic ingestor, while `load` still runs the generic Spark
-load and merges any non-empty dict you return over its summary. `HandlerContext`
-carries the `landing` and `iceberg` ports plus the platform settings.
+The module path must be importable from the repo root, hence the `use_case.`
+prefix. The class is imported and instantiated with no arguments, and must
+satisfy `ndr_lakehouse.domain.ports.UseCaseHandler` — `land(context, config)`
+returning a landing URI or `None`, and `load(context, config, landing_uri)`
+returning a summary dict or `None`. The two halves behave differently: a `None`
+from `land` falls back to the generic ingestor, while `load` still runs the
+generic Spark load and merges any non-empty dict you return over its summary.
+`HandlerContext` carries the `landing` and `iceberg` ports plus a read-only
+mapping of this asset's `asset_name` and `full_table_name` — nothing else.
 
 The library still owns the contract; the use case owns only the exotic part. Use
 cases are plain Python, so Dagster runs them in-process; they are deliberately
-*not* a wheel package (`use_case/` is on `PYTHONPATH`, not installed by
-`uv sync`), which keeps the library free of business vocabulary.
+*not* a wheel package (the wheel ships `ndr_lakehouse` only, so `use_case/` is
+reachable via `PYTHONPATH`, not installed by `uv sync`), which keeps the library
+free of business vocabulary.
 
-New use case checklist: create `use_case/<name>/use_case.yaml` with
-`default: false`, drop the asset YAML in its `assets/` directory, and serve it
-from its own code location — `dagster dev -m use_case` loads the `default: true`
-one.
+Adding a use case: this process loads the manifest marked `default: true`, or the
+one named explicitly through `build_definitions(use_case=...)`. To run two side
+by side, give each its own entrypoint module and a `workspace.yaml` entry with a
+distinct `location_name` — a second location that also targets `-m use_case`
+collides on the location name.
 
 ## Quick start
 
@@ -217,7 +227,7 @@ gate are enforced in `pyproject.toml`:
 ```toml
 [tool.pytest.ini_options]
 testpaths = ["orchestration/ingestion/tests/ndr_lakehouse"]
-pythonpath = ["orchestration/ingestion/src"]
+pythonpath = ["orchestration/ingestion/src", "."]
 addopts = [
     "--cov=ndr_lakehouse",
     "--cov-report=term-missing",
