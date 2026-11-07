@@ -1,0 +1,33 @@
+# Dagster instance configuration.
+#
+# docker-compose mounts this file at ``$DAGSTER_HOME/dagster.yaml`` so that the
+# webserver and the daemon share ONE instance instead of each falling back to
+# their own SQLite file inside their own DAGSTER_HOME. Sharing matters: run
+# history, the event log and sensor/schedule ticks are written by the daemon and
+# read by the webserver.
+#
+# This database is Dagster's own bookkeeping. It deliberately does NOT hold any
+# lakehouse data or lakehouse table metadata -- that stays in RustFS + Unity
+# Catalog.
+#
+# Every value is an ``env:`` reference so the same file works for any
+# deployment; docker-compose sets the corresponding variables. Run
+# ``dagster dev`` outside Docker and this file is not used at all.
+storage:
+  postgres:
+    postgres_db:
+      username:
+        env: DAGSTER_PG_USERNAME
+      password:
+        env: DAGSTER_PG_PASSWORD
+      hostname:
+        env: DAGSTER_PG_HOSTNAME
+      db_name:
+        env: DAGSTER_PG_DB
+      port:
+        env: DAGSTER_PG_PORT
+      # Required, not cosmetic: SQLAlchemy 2.1 maps the bare ``postgresql://``
+      # scheme to the psycopg **v3** driver, while dagster-postgres ships and
+      # tests against psycopg2. Without this the instance fails to start with
+      # ``ModuleNotFoundError: No module named 'psycopg'``.
+      scheme: postgresql+psycopg2
