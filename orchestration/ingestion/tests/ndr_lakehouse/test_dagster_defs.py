@@ -293,7 +293,9 @@ def test_resource_bundle_uses_manifest_platform(write_use_case):
     assert bundle["spark_iceberg"].endpoint_url == "http://localhost:9000"
 
 
-def test_resource_bundle_registers_dbt_when_project_exists(write_use_case, tmp_path, monkeypatch):
+def test_resource_bundle_registers_dbt_when_project_and_manifest_exist(
+    write_use_case, tmp_path, monkeypatch
+):
     from ndr_lakehouse.asset_property.use_case import load_use_case_config
     from ndr_lakehouse.orchestration.resources import build_resource_bundle
 
@@ -302,6 +304,9 @@ def test_resource_bundle_registers_dbt_when_project_exists(write_use_case, tmp_p
     project_dir = tmp_path / "demo" / "dbt_project"
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / "dbt_project.yml").write_text("name: demo\n", encoding="utf-8")
+    target_dir = project_dir / "target"
+    target_dir.mkdir()
+    (target_dir / "manifest.json").write_text("{}", encoding="utf-8")
 
     # dagster-dbt validates that a `dbt` executable is on PATH at construction
     # time; this suite has no dbt runtime, so provide a stub.
@@ -323,6 +328,57 @@ def test_resource_bundle_warns_when_dbt_project_is_missing(write_use_case, caplo
         bundle = build_resource_bundle(config, register_dbt=True)
     assert "dbt" not in bundle
     assert any("dbt_project.yml" in record.message for record in caplog.records)
+
+
+def test_resource_bundle_warns_when_dbt_manifest_is_missing(
+    write_use_case, tmp_path, caplog
+):
+    from ndr_lakehouse.asset_property.use_case import load_use_case_config
+    from ndr_lakehouse.orchestration.resources import build_resource_bundle
+
+    # A project without a compiled manifest would register the ``dbt`` resource
+    # while feeding no assets, so it is skipped as a half-configured setup.
+    manifest = write_use_case("demo", dbt_project_dir="dbt_project")
+    project_dir = tmp_path / "demo" / "dbt_project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "dbt_project.yml").write_text("name: demo\n", encoding="utf-8")
+
+    config = load_use_case_config(manifest)
+    with caplog.at_level("WARNING"):
+        bundle = build_resource_bundle(config, register_dbt=True)
+    assert "dbt" not in bundle
+    assert any("manifest" in record.message for record in caplog.records)
+
+
+def test_resource_bundle_survives_a_missing_dbt_extra(
+    write_use_case, tmp_path, monkeypatch, caplog
+):
+    from ndr_lakehouse.asset_property.use_case import load_use_case_config
+    from ndr_lakehouse.orchestration.resources import build_resource_bundle
+
+    # ``dbt`` is an optional extra, so an environment without it must still
+    # yield the other three resources rather than fail at import time.
+    manifest = write_use_case("demo", dbt_project_dir="dbt_project")
+    project_dir = tmp_path / "demo" / "dbt_project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "dbt_project.yml").write_text("name: demo\n", encoding="utf-8")
+    target_dir = project_dir / "target"
+    target_dir.mkdir()
+    (target_dir / "manifest.json").write_text("{}", encoding="utf-8")
+
+    import dagster_dbt
+
+    def _explode(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("dbt executable not found")
+
+    monkeypatch.setattr(dagster_dbt, "DbtCliResource", _explode)
+
+    config = load_use_case_config(manifest)
+    with caplog.at_level("WARNING"):
+        bundle = build_resource_bundle(config, register_dbt=True)
+    assert "dbt" not in bundle
+    assert {"uc_provisioner", "native_ingestor", "spark_iceberg"} <= bundle.keys()
+    assert any("DbtCliResource unavailable" in record.message for record in caplog.records)
 
 
 def test_build_definitions_requires_an_explicit_or_default_use_case(tmp_path):
@@ -373,6 +429,7 @@ def test_build_definitions_skips_metricflow_without_a_compiled_manifest(
     keys = definitions.resolve_all_asset_keys()
     assert AssetKey("metricflow_semantic_validation") not in keys
     assert AssetKey("dim_a") not in keys
+    assert "dbt" not in definitions.resources
     # The ingestion assets from the manifest are still registered.
     assert AssetKey(["landing", "demo_source"]) in keys
 
