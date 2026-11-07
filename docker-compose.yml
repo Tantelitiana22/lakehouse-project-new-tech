@@ -2,6 +2,10 @@
 # Open Data Lakehouse: RustFS + Unity Catalog OSS + Spark Thrift + Dagster.
 # There is deliberately NO Hive Metastore: all table metadata lives in Unity
 # Catalog OSS and is reached through its Iceberg REST Catalog API.
+#
+# Postgres exists only for Dagster's *own* bookkeeping (run history, event log,
+# schedules/sensors). It is not part of the lakehouse: no table data and no
+# metadata about lakehouse tables is ever stored there.
 # ---------------------------------------------------------------------------
 name: ndr-lakehouse
 
@@ -105,6 +109,26 @@ services:
       - spark.sql.warehouse.dir=s3a://lakehouse/warehouse
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16-alpine
+    hostname: postgres
+    environment:
+      POSTGRES_USER: dagster
+      POSTGRES_PASSWORD: dagster
+      POSTGRES_DB: dagster
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # Dagster cannot create its tables until Postgres accepts connections, so
+      # the Dagster services wait on this rather than on "container started".
+      test: ["CMD-SHELL", "pg_isready -U dagster -d dagster"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   dagster-webserver:
     image: ndr-lakehouse-dagster:local
     build:
@@ -129,11 +153,22 @@ services:
       # Must match the image's ENV PYTHONPATH: compose wins, so editing only the
       # Dockerfile would leave this override in place.
       PYTHONPATH: /app/orchestration/ingestion/src:/app
+      # Read by dagster-instance.yaml; keep in sync with the postgres service.
+      DAGSTER_PG_HOSTNAME: postgres
+      DAGSTER_PG_PORT: "5432"
+      DAGSTER_PG_USERNAME: dagster
+      DAGSTER_PG_PASSWORD: dagster
+      DAGSTER_PG_DB: dagster
     ports:
       - "3000:3000"
     volumes:
       - dagster-home:/app/.dagster
+      # Makes the webserver and the daemon share one Postgres-backed instance
+      # instead of each getting its own SQLite file inside its own DAGSTER_HOME.
+      - ./dagster-instance.yaml:/app/.dagster/dagster.yaml:ro
     depends_on:
+      postgres:
+        condition: service_healthy
       rustfs:
         condition: service_started
       unity-catalog:
@@ -162,9 +197,19 @@ services:
       DBT_PROFILES_DIR: /app/dbt_lakehouse
       # Must match the image's ENV PYTHONPATH; see dagster-webserver above.
       PYTHONPATH: /app/orchestration/ingestion/src:/app
+      # Must match dagster-webserver: the daemon heartbeats into the same
+      # Postgres instance, and a mismatch silently splits the run history.
+      DAGSTER_PG_HOSTNAME: postgres
+      DAGSTER_PG_PORT: "5432"
+      DAGSTER_PG_USERNAME: dagster
+      DAGSTER_PG_PASSWORD: dagster
+      DAGSTER_PG_DB: dagster
     volumes:
       - dagster-home:/app/.dagster
+      - ./dagster-instance.yaml:/app/.dagster/dagster.yaml:ro
     depends_on:
+      postgres:
+        condition: service_healthy
       dagster-webserver:
         condition: service_started
     restart: unless-stopped
@@ -173,3 +218,4 @@ volumes:
   rustfs-data:
   unity-catalog-data:
   dagster-home:
+  postgres-data:

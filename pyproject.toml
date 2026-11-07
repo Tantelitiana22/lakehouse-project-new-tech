@@ -27,6 +27,9 @@ dbt = [
     "dbt-metricflow>=0.15.0,<1",
     "metricflow>=0.213.0,<1",
 ]
+postgres = [
+    "dagster-postgres>=0.25.0,<1",
+]
 
 [dependency-groups]
 dev = [

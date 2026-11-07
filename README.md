@@ -211,6 +211,28 @@ Useful endpoints:
 | Unity Catalog OSS | http://localhost:8080 |
 | Iceberg REST API | http://localhost:8080/api/2.1/unity-catalog/iceberg |
 | Spark Thrift | thrift://localhost:10000 |
+| Postgres (Dagster state) | postgresql://dagster:dagster@localhost:5432/dagster |
+
+### Where Dagster keeps its state
+
+Dagster needs somewhere to record run history, the event log and sensor/schedule
+ticks. `docker-compose.yml` runs a small `postgres` service for exactly that, and
+`dagster-instance.yaml` points the instance at it. The file is bind-mounted to
+`$DAGSTER_HOME/dagster.yaml` so the **webserver and the daemon share one
+instance** — without it each process would silently fall back to its own SQLite
+file and the UI would not show daemon-written runs.
+
+This database is Dagster's own bookkeeping. It holds no lakehouse data and no
+metadata about lakehouse tables; those stay in RustFS and Unity Catalog.
+
+Every value in `dagster-instance.yaml` is an `env:` reference, so credentials are
+never committed. The `scheme: postgresql+psycopg2` line is required rather than
+cosmetic: SQLAlchemy 2.1 maps a bare `postgresql://` URL to the **psycopg v3**
+driver, while `dagster-postgres` ships psycopg2, so omitting it fails at startup
+with `ModuleNotFoundError: No module named 'psycopg'`.
+
+`dagster dev` (outside Docker) ignores this file entirely and keeps using a local
+SQLite instance under `.dagster/`.
 
 ## Tests
 

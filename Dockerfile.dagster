@@ -20,6 +20,10 @@ COPY orchestration ./orchestration
 COPY dbt_lakehouse ./dbt_lakehouse
 COPY use_case ./use_case
 COPY workspace.yaml ./
+# NOTE: dagster-instance.yaml is intentionally NOT copied. It has to live at
+# $DAGSTER_HOME/dagster.yaml, and the ``dagster-home`` volume would shadow
+# anything baked into /app/.dagster; docker-compose bind-mounts the single file
+# into the volume instead.
 
 ARG MAVEN_BASE=https://repo1.maven.org/maven2
 RUN set -eux; \
@@ -37,7 +41,7 @@ RUN set -eux; \
     curl -fL "${MAVEN_BASE}/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar" \
         -o /opt/spark-jars/delta-storage-3.2.0.jar
 
-RUN uv sync --frozen --extra spark --extra dbt --no-dev
+RUN uv sync --frozen --extra spark --extra dbt --extra postgres --no-dev
 
 RUN cd /app/dbt_lakehouse \
     && DBT_PROFILES_DIR=/app/dbt_lakehouse /app/.venv/bin/dbt parse
