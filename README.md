@@ -2,8 +2,12 @@
 
 A 100% metadata-driven, asset-orchestrated Open Data Lakehouse. Ingestion,
 landing-zone storage, Unity Catalog namespaces, Iceberg write behaviour and
-Dagster assets are all generated from declarative YAML in
-`orchestration/ingestion/src/ndr_lakehouse/asset_property/`.
+Dagster assets are all generated from declarative YAML.
+
+Platform code lives in `orchestration/ingestion/src/ndr_lakehouse/`; the YAML
+that describes *what* to ingest lives in `use_case/`, one directory per use case.
+Adding a data source or a new business domain means adding a directory under
+`use_case/` — the library does not change.
 
 ## Architecture
 
@@ -44,7 +48,7 @@ http://unity-catalog:8080/api/2.1/unity-catalog/iceberg
 
 | Layer | Responsibility | Key patterns |
 |---|---|---|
-| `asset_property/` | YAML contracts and validation | Pydantic v2, declarative config |
+| `asset_property/` | Pydantic v2 contracts that validate the YAML in `use_case/` | Pydantic v2, declarative config |
 | `landing/` | Pull bytes and persist native formats | Strategy (pagination), Factory (extractors), Adapter, Facade |
 | `iceberg/` | Convert, sanitize, deduplicate and write Delta UniForm (Iceberg-compatible) | Strategy (write modes), Factory, Fluent Delta merge |
 | `provisioning/` | Create RustFS buckets and UC namespaces idempotently | Service + Gateway |
@@ -99,12 +103,82 @@ assets with two blocks:
   merge), `dedup_order_by`, `auto_evolve_schema`, `partition_by`,
   `read_options` and `iceberg_tblproperties`.
 
-Adding a source is a configuration-only change: the asset factory, Spark
-loader and dbt `_sources.yml` sync discover it automatically. The generated
-Dagster keys are always:
+Adding a source to an existing use case is a configuration-only change: the
+asset factory, Spark loader and dbt `_sources.yml` sync discover it
+automatically. The generated Dagster keys are always:
 
 * landing: `AssetKey(["landing", "<asset_name>"])`
 * Bronze:  `AssetKey(["<catalog>", "<schema>", "<table>"])`
+
+## Use cases
+
+A use case is a directory under `use_case/` holding everything that is specific
+to one business situation — which sources to pull, which dbt models are Gold,
+which metric is the headline number. The generic machinery stays in
+`ndr_lakehouse/` and is reused as-is.
+
+```
+use_case/
+├── __init__.py                 # defs = build_definitions()
+└── real_estate_77/
+    ├── use_case.yaml           # manifest
+    └── assets/
+        ├── platform.yaml
+        ├── dvf_mutations_77.yaml
+        └── ...
+```
+
+The manifest keys (`ndr_lakehouse.asset_property.use_case.UseCaseConfig`):
+
+| Key | Meaning |
+|---|---|
+| `name` | Use-case identifier; also the Dagster code-location name. |
+| `description` | Free text, shown in tooling. |
+| `assets_dir` | Directory holding the per-asset YAML. Relative to the manifest. |
+| `platform_file` | Shared platform/Spark settings YAML. Relative to the manifest. |
+| `dbt_project_dir` | The dbt project this use case builds its Gold layer in. |
+| `dbt_sources_path` | Where `_sources.yml` is regenerated inside that project. |
+| `gold_models` | Gold model names to register as Dagster dbt assets. |
+| `semantic_metric` | MetricFlow metric to expose as an asset. |
+| `default` | Marks the use case loaded when none is named explicitly. |
+
+`use_case/__init__.py` calls `build_definitions()` at import time, which resolves
+the default use case, builds the ingestion assets from its YAML, provisions the
+Spark/ingestion/UC resources and — if `dbt_lakehouse/target/manifest.json` exists
+— registers the dbt and semantic assets too.
+
+### Escape hatch: per-use-case Python
+
+When a source needs behaviour the YAML cannot express, do not fork the library.
+Give the asset a `handler` — a *top-level* key next to `name` and
+`source_properties`, taking a `module:Class` dotted path:
+
+```yaml
+name: dvf_mutations_77
+handler: real_estate_77.handlers.MutationsHandler
+source_properties:
+  ...
+catalog_properties:
+  ...
+```
+
+The named class is imported and instantiated with no arguments, and must satisfy
+`ndr_lakehouse.domain.ports.UseCaseHandler` — `land(context, config)` returning a
+landing URI or `None`, and `load(context, config, landing_uri)` returning a
+summary dict or `None`. The two halves behave differently: a `None` from `land`
+falls back to the generic ingestor, while `load` still runs the generic Spark
+load and merges any non-empty dict you return over its summary. `HandlerContext`
+carries the `landing` and `iceberg` ports plus the platform settings.
+
+The library still owns the contract; the use case owns only the exotic part. Use
+cases are plain Python, so Dagster runs them in-process; they are deliberately
+*not* a wheel package (`use_case/` is on `PYTHONPATH`, not installed by
+`uv sync`), which keeps the library free of business vocabulary.
+
+New use case checklist: create `use_case/<name>/use_case.yaml` with
+`default: false`, drop the asset YAML in its `assets/` directory, and serve it
+from its own code location — `dagster dev -m use_case` loads the `default: true`
+one.
 
 ## Quick start
 

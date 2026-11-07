@@ -19,7 +19,8 @@ services:
   rustfs:
     image: rustfs/rustfs:latest
     hostname: rustfs
-    command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    command:
+      ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
     environment:
       RUSTFS_ACCESS_KEY: rustfsadmin
       RUSTFS_SECRET_KEY: rustfssecret
@@ -125,7 +126,7 @@ services:
       LANDING_BUCKET: landing-zone
       DAGSTER_HOME: /app/.dagster
       DBT_PROFILES_DIR: /app/dbt_lakehouse
-      PYTHONPATH: /app/orchestration/ingestion/src
+      PYTHONPATH: /app/orchestration/ingestion/src:/app
     ports:
       - "3000:3000"
     volumes:
@@ -157,7 +158,7 @@ services:
       LANDING_BUCKET: landing-zone
       DAGSTER_HOME: /app/.dagster
       DBT_PROFILES_DIR: /app/dbt_lakehouse
-      PYTHONPATH: /app/orchestration/ingestion/src
+      PYTHONPATH: /app/orchestration/ingestion/src:/app
     volumes:
       - dagster-home:/app/.dagster
     depends_on:
