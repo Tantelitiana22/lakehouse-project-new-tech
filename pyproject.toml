@@ -9,8 +9,8 @@ authors = [{ name = "Data Platform Team" }]
 
 dependencies = [
     "boto3>=1.34.0,<2",
-    "dagster>=1.9.0,<2",
-    "dagster-webserver>=1.9.0,<2",
+    "dagster>=1.13.29,<2",
+    "dagster-webserver>=1.13.9,<2",
     "httpx>=0.27.0,<1",
     "pydantic>=2.8.0,<3",
     "PyYAML>=6.0.1,<7",
@@ -52,11 +52,11 @@ dev = [
 # pinning to the pre-commit `rev:` values means CI cannot demand a style the
 # hooks would reject. Bump both files together.
 lint = [
-    "black==25.1.0",
-    "flake8==7.2.0",
-    "isort==6.0.1",
-    "mypy==1.16.0",
-    "pylint==3.3.7",
+    "black==26.10.1",
+    "flake8==7.5.0",
+    "isort==9.0.2",
+    "mypy==2.4.1",
+    "pylint==4.1.3",
     "types-PyYAML",
 ]
 

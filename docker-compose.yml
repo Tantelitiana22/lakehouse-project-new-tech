@@ -38,22 +38,38 @@ services:
       - rustfs-data:/data
     restart: unless-stopped
 
+  # One-shot bucket creation. This used to run `minio/mc`, but MinIO pulled its
+  # images from Docker Hub (the repository 404s, and quay.io/minio/* now returns
+  # `unauthorized`), so the image cannot be pulled at all. `amazon/aws-cli` is
+  # the official AWS image, still published, and it speaks plain S3 -- which is
+  # what RustFS exposes -- so `s3 mb` replaces `mc mb --ignore-existing`.
+  #
+  # `s3 mb` is idempotent against RustFS even without `--ignore-existing` (a
+  # second run on an existing bucket still exits 0), so the `|| true` only
+  # guards against a transient error after the service is already up.
   init-buckets:
-    image: minio/mc:latest
+    image: amazon/aws-cli:latest
     depends_on:
       rustfs:
         condition: service_started
     environment:
-      RUSTFS_ACCESS_KEY: rustfsadmin
-      RUSTFS_SECRET_KEY: rustfssecret
+      # aws-cli reads the standard AWS_* names, not RUSTFS_*.
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfssecret
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://rustfs:9000
+      # RustFS is not on EC2; without this the CLI probes the metadata service
+      # on every call and adds seconds of latency before each command.
+      AWS_EC2_METADATA_DISABLED: "true"
+    # The image's ENTRYPOINT is `aws`, so it has to be replaced to get a shell.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        until mc alias set rustfs http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY"; do
+        until aws --endpoint-url "$$AWS_ENDPOINT_URL" s3 ls >/dev/null 2>&1; do
           echo "waiting for RustFS..."; sleep 2;
         done
-        mc mb --ignore-existing rustfs/landing-zone
-        mc mb --ignore-existing rustfs/lakehouse
+        aws --endpoint-url "$$AWS_ENDPOINT_URL" s3 mb s3://landing-zone || true
+        aws --endpoint-url "$$AWS_ENDPOINT_URL" s3 mb s3://lakehouse || true
         echo "RustFS buckets ready: landing-zone, lakehouse"
     restart: "no"
 
