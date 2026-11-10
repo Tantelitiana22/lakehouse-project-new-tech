@@ -1,0 +1,61 @@
+[MAIN]
+# 100 is the project-wide line length (see [tool.ruff] in pyproject.toml).
+max-line-length = 100
+
+# Discover the project's own packages so imports resolve.
+py-version = 3.11
+
+ignore =
+    .git,
+    .venv,
+    __pycache__,
+    build,
+    dist,
+    dbt_lakehouse
+
+[TYPECHECK]
+# pydantic assigns field values from a `Field(...)` default, so pylint infers
+# the attribute type as `FieldInfo` and reports false `no-member` errors on
+# methods the real model value does have (`model_copy`, `startswith`, ...).
+# `extension-pkg-allow-list` is what lets pylint inspect pydantic instead of
+# guessing from the stub.
+extension-pkg-allow-list = pydantic
+
+# These packages are behind optional extras (`spark`, `dbt`) and are
+# deliberately absent from a base install, so pylint cannot import them.
+ignored-modules = pyspark,pyspark.sql,delta,delta.tables,dagster_dbt
+
+[MESSAGES CONTROL]
+# Reasons:
+#   too-few-public-methods     - Dagster resources/Config classes are small by design.
+#   duplicate-code             - several Dagster resources share a similar shape.
+#   import-outside-toplevel    - the dbt imports are deliberately lazy so that
+#                                dbt stays an optional extra.
+#   broad-exception-caught     - intentional around the optional dbt integration,
+#                                where any failure must degrade to "no dbt assets".
+#   missing-*-docstring         - the codebase documents behaviour with comments
+#                                and tests rather than module/class docstrings.
+#   fixme                      - TODOs are tracked outside the linter.
+#   no-member                  - pydantic's `Field(default_factory=...)` makes
+#                                pylint infer the attribute as `FieldInfo`,
+#                                which lacks the real model methods. Valid
+#                                pydantic v2, and mypy already covers typing.
+#   unused-argument            - Protocol handlers must accept the full
+#                                signature even when they ignore some parts.
+disable =
+    too-few-public-methods,
+    duplicate-code,
+    import-outside-toplevel,
+    broad-exception-caught,
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    fixme,
+    no-member,
+    unused-argument
+
+[DESIGN]
+# Dagster asset factories legitimately take several keyword arguments.
+max-args = 10
+max-positional-arguments = 8
+max-attributes = 12

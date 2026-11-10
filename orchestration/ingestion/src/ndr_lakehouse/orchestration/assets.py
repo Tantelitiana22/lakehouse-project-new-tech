@@ -310,14 +310,12 @@ def build_ingestion_assets_from_yaml(
 ) -> list[AssetsDefinition]:
     """Build one landing + one Iceberg asset per configured source."""
 
-    if configs is None and asset_dir is None:
+    if configs is not None:
+        resolved = list(configs)
+    elif asset_dir is not None:
+        resolved = discover_ingestion_configs(asset_dir, recursive=recursive)
+    else:
         raise ValueError("build_ingestion_assets_from_yaml needs asset_dir or configs")
-
-    resolved = (
-        list(configs)
-        if configs is not None
-        else discover_ingestion_configs(asset_dir, recursive=recursive)
-    )
 
     assets: list[AssetsDefinition] = []
     for config in resolved:

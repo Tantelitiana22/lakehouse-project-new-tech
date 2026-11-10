@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from ndr_lakehouse.domain.errors import InvalidHandlerReferenceError
 from ndr_lakehouse.orchestration.handlers import NullHandler, resolve_handler
 

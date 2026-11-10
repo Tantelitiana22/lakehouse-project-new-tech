@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+
 from ndr_lakehouse.asset_property.schema_validator import parse_asset_config
 from ndr_lakehouse.domain.errors import (
     UnsupportedPaginationStrategyError,

@@ -137,4 +137,3 @@ class UseCaseHandler(Protocol):
     def load(
         self, context: HandlerContext, config: "AssetConfig", landing_uri: str
     ) -> dict[str, Any] | None: ...
-

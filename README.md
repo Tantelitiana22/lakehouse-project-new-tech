@@ -260,6 +260,39 @@ addopts = [
 `uv run pytest` fails if total coverage drops below **80%** (branch coverage is
 enabled).
 
+## Pre-commit hooks
+
+Linting and formatting run through [pre-commit](https://pre-commit.com). Install
+the git hook once per clone:
+
+```bash
+uv sync --group dev
+uv run pre-commit install          # on every `git commit`
+uv run pre-commit run --all-files  # to check the whole tree on demand
+```
+
+Seven hooks are configured in `.pre-commit-config.yaml`:
+
+| Hook | Config | Scope |
+| --- | --- | --- |
+| `isort` | `[tool.isort]` in `pyproject.toml` | import order (black profile) |
+| `black` | `--line-length=100` | Python formatting |
+| `flake8` | `.flake8` | pyflakes/pycodestyle |
+| `mypy` | `[tool.mypy]` in `pyproject.toml` | type checking |
+| `pylint` | `.pylintrc` | design and code smells |
+| `sqlfluff-fix` | `.sqlfluff` | auto-fix Spark SQL layout |
+| `sqlfluff-lint` | `.sqlfluff` | SQL linting |
+
+A few project-specific details are easy to get wrong:
+
+* The line length is **100** everywhere — `pyproject.toml`, `.flake8`, `.pylintrc`
+  and `.sqlfluff` all agree, so the tools cannot fight each other.
+* The SQL dialect is **`sparksql`**, not `trino`. `dbt_lakehouse/profiles.yml`
+  targets Spark over thrift, and the models use `explode`, `sequence` and
+  `interval 1 day`, which a Trino parser cannot read.
+* `sqlfluff-fix` runs **before** `sqlfluff-lint`: pre-commit stops at the first
+  failing hook, so linting first would prevent the fixer from ever running.
+
 ## Write semantics
 
 * **overwrite / initial creation** — `DeltaTable.createOrReplace(...)` with all

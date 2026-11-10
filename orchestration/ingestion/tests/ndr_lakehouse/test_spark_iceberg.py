@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+
 from ndr_lakehouse.domain.errors import UnsupportedWriteModeError
 from ndr_lakehouse.iceberg import (
     AppendWriteStrategy,

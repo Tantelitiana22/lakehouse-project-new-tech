@@ -68,6 +68,24 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
 
+# isort reads this section directly, so the hook needs no CLI flags.
+# `known_first_party` is the line that matters: without it isort treats
+# `ndr_lakehouse` as third-party and deletes the blank line separating it from
+# `dagster`, silently undoing the grouping the code already uses.
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["ndr_lakehouse", "use_case"]
+
+# mypy is invoked by pre-commit with `--config-file=pyproject.toml`, so its
+# settings must live here rather than in a separate mypy.ini.
+[tool.mypy]
+python_version = "3.11"
+# Third-party libraries without stub packages (delta, dbt, dagster_dbt) would
+# otherwise dominate the output with import errors that we cannot fix.
+ignore_missing_imports = true
+warn_unused_ignores = true
+
 [tool.coverage.run]
 source = ["ndr_lakehouse"]
 branch = true

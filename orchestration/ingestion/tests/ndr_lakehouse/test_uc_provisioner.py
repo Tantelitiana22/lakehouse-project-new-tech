@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from botocore.exceptions import ClientError
+
 from ndr_lakehouse.provisioning.resource import (
     UnityCatalogProvisionerResource,
 )
