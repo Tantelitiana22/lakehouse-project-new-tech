@@ -106,7 +106,10 @@ def build_schedules(specs: Sequence[ScheduleSpec]) -> list[ScheduleDefinition]:
     """Turn validated specs into Dagster schedules, one asset job each."""
     schedules: list[ScheduleDefinition] = []
     for spec in specs:
-        job = define_asset_job(name=f"{spec.name}_job", selection=_asset_selection(spec.selection))
+        # Dagster types the decorator as returning None; it returns an unresolved job.
+        job = define_asset_job(  # pylint: disable=assignment-from-no-return
+            name=f"{spec.name}_job", selection=_asset_selection(spec.selection)
+        )
         schedules.append(
             ScheduleDefinition(
                 name=spec.name,
