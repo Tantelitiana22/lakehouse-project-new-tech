@@ -93,6 +93,39 @@ services:
       - unity-catalog-data:/opt/unitycatalog/etc
     restart: unless-stopped
 
+  # Unity Catalog ships no frontend: the server image contains only the API
+  # (api/ bin/ clients/ etc/ server/ target/), and /docs/ is an Armeria API
+  # browser, not a data catalog UI. This service builds the React app from the
+  # upstream `ui/` tree and serves it as static files behind nginx.
+  #
+  # Upstream's own UI image is deliberately NOT used: it runs the CRA *dev*
+  # server with the API host baked into package.json at build time (pointing at
+  # a service literally named `server`), and react-scripts answers "Invalid Host
+  # header" to anything else. See unity-catalog-ui/Dockerfile for the details.
+  #
+  # Host port 3001 because 3000 is already Dagster's webserver.
+  unity-catalog-ui:
+    build:
+      context: ./unity-catalog-ui
+      dockerfile: Dockerfile
+      args:
+        # Keep in step with the `unitycatalog/unitycatalog` tag running above.
+        # The UI talks to /api/2.1/unity-catalog, which is stable across the
+        # 0.x releases, but matching versions avoids surprises.
+        UC_UI_VERSION: v0.7.0
+    hostname: unity-catalog-ui
+    environment:
+      # Substituted into nginx.conf at startup, so the API target is a runtime
+      # concern and the same image works against any UC endpoint.
+      UC_SERVER: http://unity-catalog:8080
+      NGINX_PORT: "3000"
+    ports:
+      - "3001:3000"
+    depends_on:
+      unity-catalog:
+        condition: service_started
+    restart: unless-stopped
+
   spark-thrift:
     build:
       context: .

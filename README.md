@@ -243,12 +243,45 @@ Useful endpoints:
 | Service | URL |
 |---|---|
 | Dagster | http://localhost:3000 |
+| Unity Catalog UI | http://localhost:3001 |
 | RustFS console | http://localhost:9001 |
 | RustFS S3 API | http://localhost:9000 |
 | Unity Catalog OSS | http://localhost:8080 |
+| Unity Catalog API browser | http://localhost:8080/docs/ |
 | Iceberg REST API | http://localhost:8080/api/2.1/unity-catalog/iceberg |
 | Spark Thrift | thrift://localhost:10000 |
 | Postgres (Dagster state) | postgresql://dagster:dagster@localhost:5432/dagster |
+
+Note that Unity Catalog's `/docs/` path **needs the trailing slash**. Without it
+the page loads but renders blank: the HTML fetches `main.<hash>.js` relatively,
+which resolves to `/main.<hash>.js` and 404s.
+
+### Unity Catalog UI
+
+`unitycatalog/unitycatalog` ships no frontend -- the image is API only, and
+`/docs/` is an Armeria API browser rather than a data catalog. The
+`unity-catalog-ui` service builds the React app from the upstream `ui/` tree and
+serves it behind nginx on port 3001 (3000 is Dagster's).
+
+The upstream `unitycatalog/unitycatalog-ui` image is deliberately **not** used.
+It runs the CRA dev server with the API host baked into `package.json` at build
+time -- pointing at a service literally named `server` -- and `react-scripts`
+rejects any other Host header with `Invalid Host header`, so it 502s in this
+stack. See `unity-catalog-ui/Dockerfile` for the full rationale.
+
+Because the client's axios baseURL is relative (`/api/2.1/unity-catalog`),
+nginx reverse-proxies `/api/` and the API target stays a **runtime** setting:
+
+```bash
+UC_SERVER=http://unity-catalog:8080   # substituted into nginx.conf at startup
+```
+
+Rebuild the UI against a different Unity Catalog release by bumping the
+`UC_UI_VERSION` build arg (`v0.7.0` currently, matching the server tag):
+
+```bash
+docker compose build --build-arg UC_UI_VERSION=v0.7.0 unity-catalog-ui
+```
 
 ### Where Dagster keeps its state
 

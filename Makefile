@@ -3,12 +3,13 @@ COMPOSE := docker compose
 UV := uv
 PY_SRC := orchestration/ingestion/src orchestration/ingestion/tests use_case
 
-.PHONY: help up down build restart logs ps dagster-dev ingest dbt-build dbt-parse dbt-lint dbt-format test test-cov lint format check clean
+.PHONY: help up down build restart logs ps dagster-dev ingest dbt-build dbt-parse dbt-lint dbt-format test test-cov lint format check clean ui-build
 
 help:
 	@echo "Open Data Lakehouse commands"
-	@echo "  make up          Build and start RustFS, Unity Catalog, Spark Thrift and Dagster"
+	@echo "  make up          Build and start RustFS, Unity Catalog (+ UI), Spark Thrift and Dagster"
 	@echo "  make down        Stop containers and remove volumes"
+	@echo "  make ui-build    Rebuild only the Unity Catalog UI (bump UC_UI_VERSION first)"
 	@echo "  make dagster-dev Run Dagster locally with uv"
 	@echo "  make ingest      Materialize every dynamically generated ingestion asset"
 	@echo "  make dbt-build   Build dbt staging, Gold and semantic models"
@@ -26,6 +27,11 @@ down:
 
 build:
 	$(COMPOSE) build
+
+# The UI is pinned to an upstream release via the UC_UI_VERSION build arg. Bump
+# that value in docker-compose.yml, then re-run this to pick up the new code.
+ui-build:
+	$(COMPOSE) build unity-catalog-ui
 
 restart:
 	$(COMPOSE) restart
