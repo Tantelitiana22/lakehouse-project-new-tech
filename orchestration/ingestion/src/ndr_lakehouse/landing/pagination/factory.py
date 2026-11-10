@@ -31,9 +31,7 @@ class PaginationFactory:
         try:
             builder = self._builders[config.strategy]
         except KeyError as exc:
-            raise UnsupportedPaginationStrategyError(
-                f"unsupported pagination strategy: {config.strategy!r}"
-            ) from exc
+            raise UnsupportedPaginationStrategyError(f"unsupported pagination strategy: {config.strategy!r}") from exc
         return builder(config)
 
     @classmethod

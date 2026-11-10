@@ -37,3 +37,7 @@ class DuplicateAssetNameError(LakehouseError, ValueError):
 
 class InvalidHandlerReferenceError(LakehouseError):
     """A configured handler dotted path does not resolve or violates the contract."""
+
+
+class DbtCommandError(LakehouseError):
+    """A ``dbt`` CLI invocation exited non-zero or could not be launched."""

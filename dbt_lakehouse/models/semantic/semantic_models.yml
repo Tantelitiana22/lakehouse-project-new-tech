@@ -1,96 +1,126 @@
 version: 2
 
-semantic_models:
-  - name: lots_batis
+# Semantic Layer YAML, current spec (dbt v1.12+ / dbt v2).
+#
+# Differences from the legacy layout this project used before:
+#   * a semantic model is declared inside the `models:` entry of the dbt model
+#     it describes, under a `semantic_model:` block, instead of a top-level
+#     `semantic_models:` list with `model: ref(...)`;
+#   * `agg_time_dimension` is a model-level key, not `defaults.agg_time_dimension`;
+#   * entities and dimensions are attached to `columns:` entries, so a column
+#     carries its own `entity:` / `dimension:` / `granularity:` metadata;
+#   * `measures` are replaced by simple `metrics:` declared on the semantic
+#     model, with `agg` / `expr` promoted to first-class keys (no `type_params`);
+#   * a time dimension takes its granularity from the column-level
+#     `granularity:` key instead of `type_params.time_granularity`;
+#   * derived metrics stay in the top-level `metrics:` list and reference their
+#     inputs via `numerator:` / `denominator:` directly.
+#
+# Keeping the legacy layout produces `SemanticModelDeprecated (dbt1157)` on
+# every `dbt lint` / `dbt parse` run and is not usable by `dbt sl`.
+#
+# The simple metrics keep the metric names that were already published
+# (`volume_ventes_eur`, ..., `prix_moyen_m2`) so that `dbt sl query --metrics
+# prix_moyen_m2` and the Makefile targets do not change.
+
+models:
+  - name: fct_lots_batis
     description: >-
       Lot-level DVF fact for department 77. The dbt model already deduplicates
       lots and computes mutation totals with window functions, which is the
       CTE anti-fanout guard for the prix_moyen_m2 ratio metric.
-    model: ref('fct_lots_batis')
-    defaults:
-      agg_time_dimension: mutation_date
-    entities:
-      - name: lot
-        type: primary
-        expr: lot_id
-      - name: mutation
-        type: foreign
-        expr: mutation_id
-      - name: commune
-        type: foreign
-        expr: commune_code
-    dimensions:
-      - name: mutation_date
-        type: time
-        type_params:
-          time_granularity: day
-        expr: mutation_date
-      - name: nature_mutation
-        type: categorical
-        expr: nature_mutation
+    semantic_model:
+      enabled: true
+      name: lots_batis
+    agg_time_dimension: mutation_date
+    columns:
+      - name: lot_id
+        description: Primary key of the semantic model, one row per DVF lot.
+        entity:
+          type: primary
+          name: lot
+      - name: mutation_id
+        description: Join key back to the mutation that produced the lot.
+        entity:
+          type: foreign
+          name: mutation
       - name: commune_code
-        type: categorical
-        expr: commune_code
+        description: INSEE code of the commune the lot belongs to.
+        entity:
+          type: foreign
+          name: commune
+        dimension:
+          type: categorical
+      - name: mutation_date
+        description: Date on which the sale was registered.
+        granularity: day
+        dimension:
+          type: time
+      - name: nature_mutation
+        description: DVF nature of the mutation (Vente, Echange, ...).
+        dimension:
+          type: categorical
       - name: department_code
-        type: categorical
-        expr: department_code
-    measures:
-      - name: total_volume_ventes_eur
-        description: Sum of lot sale values in EUR.
+        description: INSEE code of the department, always 77 here.
+        dimension:
+          type: categorical
+    metrics:
+      - name: volume_ventes_eur
+        description: Total real-estate sales volume in EUR.
+        type: simple
+        label: Sales volume (EUR)
         agg: sum
         expr: valeur_fonciere
-      - name: total_surface_vendue_m2
-        description: Sum of lot built surfaces in square metres.
+      - name: surface_vendue_m2
+        description: Total built surface sold in square metres.
+        type: simple
+        label: Surface sold (m2)
         agg: sum
         expr: surface_reelle_bati
-      - name: total_lots
+      - name: nombre_lots_vendus
         description: Number of lots sold.
+        type: simple
+        label: Lots sold
         agg: sum
         expr: "1"
 
-  - name: mutations
+  - name: fct_mutations
     description: Mutation-level DVF fact, useful for mutation counts and controls.
-    model: ref('fct_mutations')
-    defaults:
-      agg_time_dimension: mutation_date
-    entities:
-      - name: mutation
-        type: primary
-        expr: mutation_id
-      - name: commune
-        type: foreign
-        expr: commune_code
-    dimensions:
-      - name: mutation_date
-        type: time
-        type_params:
-          time_granularity: day
-        expr: mutation_date
-      - name: nature_mutation
-        type: categorical
-        expr: nature_mutation
+    semantic_model:
+      enabled: true
+      name: mutations
+    agg_time_dimension: mutation_date
+    columns:
+      - name: mutation_id
+        description: Primary key of the semantic model, one row per DVF mutation.
+        entity:
+          type: primary
+          name: mutation
       - name: commune_code
-        type: categorical
-        expr: commune_code
-    measures:
-      - name: total_mutations
-        description: Number of DVF mutations.
+        description: INSEE code of the commune the mutation happened in.
+        entity:
+          type: foreign
+          name: commune
+        dimension:
+          type: categorical
+      - name: mutation_date
+        description: Date on which the mutation was registered.
+        granularity: day
+        dimension:
+          type: time
+      - name: nature_mutation
+        description: DVF nature of the mutation (Vente, Echange, ...).
+        dimension:
+          type: categorical
+    metrics:
+      - name: nombre_mutations
+        description: Number of DVF mutations at commune level.
+        type: simple
+        label: Mutations
         agg: sum
         expr: "1"
 
 metrics:
-  - name: volume_ventes_eur
-    description: Total real-estate sales volume in EUR.
-    type: simple
-    type_params:
-      measure: total_volume_ventes_eur
-
-  - name: surface_vendue_m2
-    description: Total built surface sold in square metres.
-    type: simple
-    type_params:
-      measure: total_surface_vendue_m2
-
   - name: prix_moyen_m2
     description: >-
       Average sale price per square metre, computed as a ratio metric
@@ -98,18 +128,6 @@ metrics:
       fanned out because fct_lots_batis pre-aggregates mutation totals in a
       dedicated CTE before semantic consumption.
     type: ratio
-    type_params:
-      numerator: volume_ventes_eur
-      denominator: surface_vendue_m2
-
-  - name: nombre_lots_vendus
-    description: Number of lots sold.
-    type: simple
-    type_params:
-      measure: total_lots
-
-  - name: nombre_mutations
-    description: Number of DVF mutations at commune level.
-    type: simple
-    type_params:
-      measure: total_mutations
+    label: Average price per m2
+    numerator: volume_ventes_eur
+    denominator: surface_vendue_m2

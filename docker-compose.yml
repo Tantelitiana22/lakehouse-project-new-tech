@@ -150,6 +150,11 @@ services:
       LANDING_BUCKET: landing-zone
       DAGSTER_HOME: /app/.dagster
       DBT_PROFILES_DIR: /app/dbt_lakehouse
+      # dbt v2 ships the Spark adapter inside its binary but keeps it gated;
+      # without this every `dbt` invocation fails with `dbt1005`. It matches the
+      # ENV of the image so `docker compose exec` inherits the same behaviour.
+      DBT_ALLOW_EXPERIMENTAL_ADAPTERS: "true"
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
       # Must match the image's ENV PYTHONPATH: compose wins, so editing only the
       # Dockerfile would leave this override in place.
       PYTHONPATH: /app/orchestration/ingestion/src:/app
@@ -195,6 +200,9 @@ services:
       LANDING_BUCKET: landing-zone
       DAGSTER_HOME: /app/.dagster
       DBT_PROFILES_DIR: /app/dbt_lakehouse
+      # Must match dagster-webserver: the daemon executes the same dbt CLI.
+      DBT_ALLOW_EXPERIMENTAL_ADAPTERS: "true"
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
       # Must match the image's ENV PYTHONPATH; see dagster-webserver above.
       PYTHONPATH: /app/orchestration/ingestion/src:/app
       # Must match dagster-webserver: the daemon heartbeats into the same

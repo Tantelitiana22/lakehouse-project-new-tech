@@ -33,7 +33,7 @@ landing/  ───────────────────────�
                   dbt (Spark Thrift)  ──►  lakehouse.gold.*
                         │
                         ▼
-             MetricFlow semantic layer (prix_moyen_m2)
+        Semantic Layer (dbt metrics, prix_moyen_m2)
 ```
 
 There is **no Hive Metastore**. Tables are written as Delta Lake with UniForm
@@ -87,7 +87,7 @@ orchestration/ingestion/
 │   ├── provisioning/               # RustFS buckets + UC catalogs/schemas
 │   └── orchestration/              # Dagster-only: assets, resources, definitions, dbt glue
 └── tests/ndr_lakehouse/            # pytest + pytest-mock + coverage suite
-dbt_lakehouse/                      # dedicated dbt + MetricFlow project
+dbt_lakehouse/                      # dedicated dbt project (models + Semantic Layer)
 ```
 
 ## Declarative contract
@@ -138,7 +138,7 @@ The manifest keys (`ndr_lakehouse.asset_property.use_case.UseCaseConfig`):
 | `dbt_project_dir` | The dbt project this use case builds its Gold layer in. |
 | `dbt_sources_path` | Where `_sources.yml` is regenerated inside that project. |
 | `gold_models` | Gold model names to register as Dagster dbt assets. |
-| `semantic_metric` | MetricFlow metric to expose as an asset. |
+| `semantic_metric` | Semantic Layer metric to expose as an asset. |
 | `default` | Marks the manifest loaded when none is named explicitly. |
 
 The Dagster code location is *not* named after the use case — Dagster names it
@@ -198,7 +198,7 @@ make up                 # RustFS, bucket init, Unity Catalog OSS, Spark Thrift, 
 open http://localhost:3000
 make ingest             # materialize all generated landing + Bronze assets
 make dbt-build          # build Gold Iceberg models
-make mf-query           # query the prix_moyen_m2 ratio metric
+make dbt-lint           # lint the SQL with dbt's native linter
 ```
 
 Useful endpoints:
@@ -276,22 +276,30 @@ Seven hooks are configured in `.pre-commit-config.yaml`:
 | Hook | Config | Scope |
 | --- | --- | --- |
 | `isort` | `[tool.isort]` in `pyproject.toml` | import order (black profile) |
-| `black` | `--line-length=100` | Python formatting |
+| `black` | `--line-length=120` | Python formatting |
 | `flake8` | `.flake8` | pyflakes/pycodestyle |
 | `mypy` | `[tool.mypy]` in `pyproject.toml` | type checking |
 | `pylint` | `.pylintrc` | design and code smells |
-| `sqlfluff-fix` | `.sqlfluff` | auto-fix Spark SQL layout |
-| `sqlfluff-lint` | `.sqlfluff` | SQL linting |
+| `dbt format (check)` | `.sqlfluff`-ported rules | SQL layout, via `dbt format --check` |
+| `dbt lint` | same rules | SQL linting, via `dbt lint` |
 
 A few project-specific details are easy to get wrong:
 
-* The line length is **100** everywhere — `pyproject.toml`, `.flake8`, `.pylintrc`
+* The line length is **120** everywhere — `pyproject.toml`, `.flake8`, `.pylintrc`
   and `.sqlfluff` all agree, so the tools cannot fight each other.
-* The SQL dialect is **`sparksql`**, not `trino`. `dbt_lakehouse/profiles.yml`
-  targets Spark over thrift, and the models use `explode`, `sequence` and
+* SQL is linted by **dbt's own linter** (dbt v2), not by `sqlfluff`. The rules were
+  ported from the previous `.sqlfluff` file — `capitalisation.keywords = upper`,
+  `capitalisation.identifiers = upper` (all), `aliasing.table/column = explicit`,
+  `min_alias_length = 3`, `indented_using_on = true`, `indented_joins = false` —
+  which is why every model is written in upper case.
+* The dialect is **`sparksql`**, not `trino`. `dbt_lakehouse/profiles.yml` targets
+  Spark over thrift, and the models use `explode`, `sequence` and
   `interval 1 day`, which a Trino parser cannot read.
-* `sqlfluff-fix` runs **before** `sqlfluff-lint`: pre-commit stops at the first
-  failing hook, so linting first would prevent the fixer from ever running.
+* Both hooks need `DBT_ALLOW_EXPERIMENTAL_ADAPTERS=true`. dbt v2 bundles the Spark
+  adapter but keeps it behind that flag, and it gates `lint`/`format` too, not
+  just `run`. The Docker images and `docker-compose.yml` set it as well.
+* The hooks pass `pass_filenames: false`: `dbt lint` resolves paths relative to
+  the dbt project, so feeding it repo-relative paths fails with `dbt1007`.
 
 ## Write semantics
 
@@ -312,22 +320,33 @@ A few project-specific details are easy to get wrong:
 
 ## Semantic layer
 
-`dbt_lakehouse/models/semantic/semantic_models.yml` defines the Gold semantic
-models and the ratio metric:
+`dbt_lakehouse/models/semantic/semantic_models.yml` declares one semantic model
+per Gold model (`lots_batis`, `mutations`) and the ratio metric. The layout
+follows the current dbt spec (v1.12+): entities and dimensions live on the
+*semantic model's columns*, and each simple metric names its `agg` and `expr`.
+The ratio metric is the only top-level entry:
 
 ```yaml
 metrics:
   - name: prix_moyen_m2
     type: ratio
-    type_params:
-      numerator: volume_ventes_eur
-      denominator: surface_vendue_m2
+    numerator: volume_ventes_eur
+    denominator: surface_vendue_m2
 ```
 
 `fct_lots_batis.sql` pre-aggregates mutation totals in a deduplicated CTE
 before the semantic layer consumes it, preventing fan-out of the ratio
-denominator. The `metricflow_semantic_validation` Dagster asset runs
-`mf validate-configs --skip-dw` after the Gold dbt assets materialize. The
-`--skip-dw` flag is required because dbt-spark is not a MetricFlow warehouse
-adapter; semantic graph validation (entities, dimensions, measures, metrics)
-still runs in full.
+denominator.
+
+The `metricflow_semantic_validation` Dagster asset runs `dbt parse` after the
+Gold dbt assets materialize, which compiles and validates the semantic graph
+(entities, dimensions, simple metrics, ratio inputs). Two caveats are worth
+knowing:
+
+* `dbt sl validate` — the direct replacement for `mf validate-configs` — is a
+  **dbt Cloud feature**. On a self-hosted lakehouse it fails with
+  `Missing project in dbt_cloud.yaml`, so `dbt parse` is the strongest offline
+  check available.
+* `dbt parse` rejects malformed YAML (an unknown `agg` is an error), but it does
+  **not** resolve cross-metric references: a `numerator:` pointing at a
+  non-existent metric parses silently. Keep those names honest by hand.

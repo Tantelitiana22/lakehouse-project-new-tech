@@ -1,39 +1,39 @@
 {{ config(materialized='table', schema='gold', file_format='delta', tags=['gold', 'fact']) }}
 
-with source as (
-    select * from {{ source('bronze', 'dvf_mutations_77') }}
+WITH SOURCE AS (
+    SELECT * FROM {{ source('bronze', 'dvf_mutations_77') }}
 ),
 
-deduplicated as (
-    select
+DEDUPLICATED AS (
+    SELECT
         *,
-        row_number() over (
-            partition by id_mutation, id_parcelle
-            order by _ingested_at desc
-        ) as ingest_row_number
-    from source
+        row_number() OVER (
+            PARTITION BY ID_MUTATION, ID_PARCELLE
+            ORDER BY _INGESTED_AT DESC
+        ) AS INGEST_ROW_NUMBER
+    FROM SOURCE
 ),
 
-cleaned as (
-    select
-        cast(id_mutation as string) as mutation_id,
-        cast(date_mutation as date) as mutation_date,
-        cast(nature_mutation as string) as nature_mutation,
-        cast(valeur_fonciere as double) as valeur_fonciere,
-        cast(surface_reelle_bati as double) as surface_reelle_bati,
-        cast(surface_terrain as double) as surface_terrain,
-        cast(nombre_lots as int) as nombre_lots,
-        cast(code_commune as string) as commune_code,
-        cast(nom_commune as string) as commune_name,
-        cast(code_departement as string) as department_code,
-        cast(longitude as double) as longitude,
-        cast(latitude as double) as latitude,
-        _ingested_at
-    from deduplicated
-    where ingest_row_number = 1
+CLEANED AS (
+    SELECT
+        CAST(ID_MUTATION AS string) AS MUTATION_ID,
+        CAST(DATE_MUTATION AS date) AS MUTATION_DATE,
+        CAST(NATURE_MUTATION AS string) AS NATURE_MUTATION,
+        CAST(VALEUR_FONCIERE AS double) AS VALEUR_FONCIERE,
+        CAST(SURFACE_REELLE_BATI AS double) AS SURFACE_REELLE_BATI,
+        CAST(SURFACE_TERRAIN AS double) AS SURFACE_TERRAIN,
+        CAST(NOMBRE_LOTS AS int) AS NOMBRE_LOTS,
+        CAST(CODE_COMMUNE AS string) AS COMMUNE_CODE,
+        CAST(NOM_COMMUNE AS string) AS COMMUNE_NAME,
+        CAST(CODE_DEPARTEMENT AS string) AS DEPARTMENT_CODE,
+        CAST(LONGITUDE AS double) AS LONGITUDE,
+        CAST(LATITUDE AS double) AS LATITUDE,
+        _INGESTED_AT
+    FROM DEDUPLICATED
+    WHERE INGEST_ROW_NUMBER = 1
 )
 
-select
+SELECT
     *,
-    valeur_fonciere / nullif(surface_reelle_bati, 0) as prix_m2
-from cleaned
+    VALEUR_FONCIERE / nullif(SURFACE_REELLE_BATI, 0) AS PRIX_M2
+FROM CLEANED

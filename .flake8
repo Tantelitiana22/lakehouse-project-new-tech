@@ -1,6 +1,6 @@
 [flake8]
-# 100 is the project-wide line length (see [tool.ruff] in pyproject.toml).
-max-line-length = 100
+# 120 is the project-wide line length (see [tool.ruff] in pyproject.toml).
+max-line-length = 120
 
 # E203 (whitespace before ':') and W503 (line break before binary operator) are
 # both produced by black's formatting, so flake8 and black disagree on them.

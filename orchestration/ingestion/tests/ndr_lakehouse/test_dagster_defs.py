@@ -88,7 +88,11 @@ def test_dbt_sources_document_injects_dagster_asset_key(sample_asset_config):
     assert source["schema"] == "bronze"
     table = source["tables"][0]
     assert table["name"] == "demo_table"
-    assert table["meta"]["dagster"]["asset_key"] == [
+    # dbt v2 rejects a bare `meta:` block on a source with `UnusedConfigKey
+    # (dbt1060)`, which is an error and not a warning. `config.meta` parses and
+    # still lands in `manifest.sources[uid].meta`, which is what the Dagster
+    # asset factory reads.
+    assert table["config"]["meta"]["dagster"]["asset_key"] == [
         "lakehouse",
         "bronze",
         "demo_table",
@@ -171,9 +175,7 @@ def test_custom_handler_overrides_landing_and_merges_load(mocker, sample_asset_c
     HANDLER_CALLS.clear()
     HANDLER_CONTEXTS.clear()
     mocker.patch.object(UnityCatalogProvisionerResource, "ensure_buckets", return_value={})
-    mocker.patch.object(
-        UnityCatalogProvisionerResource, "ensure_catalog_and_schema", return_value={}
-    )
+    mocker.patch.object(UnityCatalogProvisionerResource, "ensure_catalog_and_schema", return_value={})
     ingestor = NativeIngestorResource()
     mocker.patch.object(NativeIngestorResource, "ingest", return_value="s3a://platform/x")
     spark = SparkIcebergResource()
@@ -214,17 +216,13 @@ def test_custom_handler_overrides_landing_and_merges_load(mocker, sample_asset_c
 
 def test_asset_without_handler_uses_platform_path(mocker, sample_asset_config):
     mocker.patch.object(UnityCatalogProvisionerResource, "ensure_buckets", return_value={})
-    mocker.patch.object(
-        UnityCatalogProvisionerResource, "ensure_catalog_and_schema", return_value={}
-    )
+    mocker.patch.object(UnityCatalogProvisionerResource, "ensure_catalog_and_schema", return_value={})
     ingestor = NativeIngestorResource()
     mocker.patch.object(NativeIngestorResource, "ingest", return_value="s3a://platform/output")
 
     assets = build_ingestion_assets_from_yaml(configs=[sample_asset_config])
     landing_asset = next(a for a in assets if AssetKey(["landing", "demo_source"]) in a.keys)
-    iceberg_asset = next(
-        a for a in assets if AssetKey(["lakehouse", "bronze", "demo_table"]) in a.keys
-    )
+    iceberg_asset = next(a for a in assets if AssetKey(["lakehouse", "bronze", "demo_table"]) in a.keys)
 
     # Lock both defaults, not just the landing one: the materialisation test
     # below supplies all three resources, so a resource leaking into the
@@ -257,9 +255,7 @@ def test_empty_handler_string_uses_platform_path(sample_asset_config):
 
     assets = build_ingestion_assets_from_yaml(configs=[config])
     landing_asset = next(a for a in assets if AssetKey(["landing", "demo_source"]) in a.keys)
-    iceberg_asset = next(
-        a for a in assets if AssetKey(["lakehouse", "bronze", "demo_table"]) in a.keys
-    )
+    iceberg_asset = next(a for a in assets if AssetKey(["lakehouse", "bronze", "demo_table"]) in a.keys)
 
     assert sorted(landing_asset.op.required_resource_keys) == [
         "native_ingestor",
@@ -294,9 +290,7 @@ def test_resource_bundle_uses_manifest_platform(write_use_case):
     assert bundle["spark_iceberg"].endpoint_url == "http://localhost:9000"
 
 
-def test_resource_bundle_registers_dbt_when_project_and_manifest_exist(
-    write_use_case, tmp_path, monkeypatch
-):
+def test_resource_bundle_registers_dbt_when_project_and_manifest_exist(write_use_case, tmp_path, monkeypatch):
     from ndr_lakehouse.asset_property.use_case import load_use_case_config
     from ndr_lakehouse.orchestration.resources import build_resource_bundle
 
@@ -349,14 +343,15 @@ def test_resource_bundle_warns_when_dbt_manifest_is_missing(write_use_case, tmp_
     assert any("manifest" in record.message for record in caplog.records)
 
 
-def test_resource_bundle_survives_a_missing_dbt_extra(
-    write_use_case, tmp_path, monkeypatch, caplog
-):
+def test_resource_bundle_survives_a_missing_dbt_extra(write_use_case, tmp_path, monkeypatch, caplog):
     from ndr_lakehouse.asset_property.use_case import load_use_case_config
+    from ndr_lakehouse.orchestration import resources as resources_module
     from ndr_lakehouse.orchestration.resources import build_resource_bundle
 
-    # ``dbt`` is an optional extra, so an environment without it must still
-    # yield the other three resources rather than fail at import time.
+    # ``dbt`` is an optional extra, so an environment without the binary must
+    # still yield the other three resources rather than fail at import time.
+    # The resource is a plain subprocess wrapper, so the only thing that can be
+    # missing is the executable: force ``shutil.which`` to report it absent.
     manifest = write_use_case("demo", dbt_project_dir="dbt_project")
     project_dir = tmp_path / "demo" / "dbt_project"
     project_dir.mkdir(parents=True)
@@ -365,12 +360,7 @@ def test_resource_bundle_survives_a_missing_dbt_extra(
     target_dir.mkdir()
     (target_dir / "manifest.json").write_text("{}", encoding="utf-8")
 
-    import dagster_dbt
-
-    def _explode(*args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError("dbt executable not found")
-
-    monkeypatch.setattr(dagster_dbt, "DbtCliResource", _explode)
+    monkeypatch.setattr(resources_module.DbtCliResource, "is_available", lambda self: False)
 
     config = load_use_case_config(manifest)
     with caplog.at_level("WARNING"):
@@ -392,13 +382,9 @@ def test_build_definitions_builds_assets_from_the_manifest(write_use_case, asset
     from ndr_lakehouse.orchestration.definitions import build_definitions
 
     manifest = write_use_case("demo")
-    (manifest.parent / "assets" / "demo.yaml").write_text(
-        yaml.safe_dump(asset_payload), encoding="utf-8"
-    )
+    (manifest.parent / "assets" / "demo.yaml").write_text(yaml.safe_dump(asset_payload), encoding="utf-8")
 
-    definitions = build_definitions(
-        "demo", root=manifest.parent.parent, register_dbt=False, sync_sources=False
-    )
+    definitions = build_definitions("demo", root=manifest.parent.parent, register_dbt=False, sync_sources=False)
     assert AssetKey(["landing", "demo_source"]) in definitions.resolve_all_asset_keys()
 
 
@@ -411,9 +397,7 @@ def test_build_definitions_skips_metricflow_without_a_compiled_manifest(
     # metricflow asset's deps would point at gold models no asset defines, so it
     # must be left out alongside the dbt assets it depends on.
     manifest = write_use_case("demo", dbt_project_dir="dbt_project")
-    (manifest.parent / "assets" / "demo.yaml").write_text(
-        yaml.safe_dump(asset_payload), encoding="utf-8"
-    )
+    (manifest.parent / "assets" / "demo.yaml").write_text(yaml.safe_dump(asset_payload), encoding="utf-8")
     project_dir = tmp_path / "demo" / "dbt_project"
     project_dir.mkdir(parents=True)
     (project_dir / "dbt_project.yml").write_text("name: demo\n", encoding="utf-8")
@@ -433,17 +417,13 @@ def test_build_definitions_skips_metricflow_without_a_compiled_manifest(
     assert AssetKey(["landing", "demo_source"]) in keys
 
 
-def test_build_definitions_does_not_touch_dbt_when_register_dbt_is_false(
-    write_use_case, asset_payload, tmp_path
-):
+def test_build_definitions_does_not_touch_dbt_when_register_dbt_is_false(write_use_case, asset_payload, tmp_path):
     from ndr_lakehouse.orchestration.definitions import build_definitions
 
     # ``sync_sources`` defaults to True, but a dbt-free graph must not rewrite
     # the dbt project on disk.
     manifest = write_use_case("demo", dbt_project_dir="dbt_project")
-    (manifest.parent / "assets" / "demo.yaml").write_text(
-        yaml.safe_dump(asset_payload), encoding="utf-8"
-    )
+    (manifest.parent / "assets" / "demo.yaml").write_text(yaml.safe_dump(asset_payload), encoding="utf-8")
     sources_file = tmp_path / "demo" / "dbt_project" / "models" / "staging" / "_sources.yml"
 
     build_definitions("demo", root=manifest.parent.parent, register_dbt=False)

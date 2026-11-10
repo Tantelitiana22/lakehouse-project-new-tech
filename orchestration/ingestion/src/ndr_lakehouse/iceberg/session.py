@@ -61,9 +61,7 @@ class SparkSessionFactory(SparkSessionProvider):
             "spark.hadoop.fs.s3a.secret.key": settings.secret_access_key,
             "spark.hadoop.fs.s3a.path.style.access": str(settings.use_path_style).lower(),
             "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
-            "spark.hadoop.fs.s3a.aws.credentials.provider": (
-                "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
-            ),
+            "spark.hadoop.fs.s3a.aws.credentials.provider": ("org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"),
             "spark.sql.warehouse.dir": settings.warehouse,
         }
         jars = sorted(glob.glob(os.path.join(settings.spark_jars_dir, "*.jar")))

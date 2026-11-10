@@ -32,7 +32,5 @@ class TablePropertiesSynchronizer:
         merged = with_uniform_iceberg_properties(properties)
         if not merged:
             return
-        rendered = ", ".join(
-            f"{key}='{str(value).replace(chr(39), chr(39) * 2)}'" for key, value in merged.items()
-        )
+        rendered = ", ".join(f"{key}='{str(value).replace(chr(39), chr(39) * 2)}'" for key, value in merged.items())
         spark.sql(f"ALTER TABLE {full_table_name} SET TBLPROPERTIES ({rendered})")

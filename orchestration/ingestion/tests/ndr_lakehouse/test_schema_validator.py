@@ -175,7 +175,4 @@ def test_platform_config_parses_and_builds_iceberg_uri():
         }
     )
     assert platform.unity_catalog.base_url == "http://unity-catalog:8080"
-    assert (
-        platform.unity_catalog.iceberg_rest_uri
-        == "http://unity-catalog:8080/api/2.1/unity-catalog/iceberg"
-    )
+    assert platform.unity_catalog.iceberg_rest_uri == "http://unity-catalog:8080/api/2.1/unity-catalog/iceberg"
