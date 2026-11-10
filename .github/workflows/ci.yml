@@ -17,181 +17,181 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
+    push:
+        branches: [main]
+    pull_request:
+    workflow_dispatch:
 
 # A second push to the same branch cancels the first run: nothing here is a
 # deploy, so a superseded run only wastes minutes.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
 
 permissions:
-  contents: read
+    contents: read
 
 env:
-  # Keep uv from printing progress bars and colours into the CI log, and keep
-  # its output deterministic for the cache key.
-  UV_NO_PROGRESS: "1"
+    # Keep uv from printing progress bars and colours into the CI log, and keep
+    # its output deterministic for the cache key.
+    UV_NO_PROGRESS: "1"
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Python: every static check the pre-commit suite runs, but as one job so a
-  # contributor does not have to install six tools to learn what is wrong.
-  # `pre-commit run --all-files` is intentionally NOT used: it would install
-  # each hook's isolated environment on every run, which is slower than the CI
-  # cache for the plain tools and makes failures harder to attribute.
-  # ---------------------------------------------------------------------------
-  python-quality:
-    name: Python quality
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
+    # ---------------------------------------------------------------------------
+    # Python: every static check the pre-commit suite runs, but as one job so a
+    # contributor does not have to install six tools to learn what is wrong.
+    # `pre-commit run --all-files` is intentionally NOT used: it would install
+    # each hook's isolated environment on every run, which is slower than the CI
+    # cache for the plain tools and makes failures harder to attribute.
+    # ---------------------------------------------------------------------------
+    python-quality:
+        name: Python quality
+        runs-on: ubuntu-24.04
+        steps:
+            - uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          python-version: "3.12"
+            - name: Install uv
+              uses: astral-sh/setup-uv@v7
+              with:
+                  enable-cache: true
+                  cache-dependency-glob: uv.lock
+                  python-version: "3.12"
 
-      - name: Install the project (test + tooling dependencies)
-        # No `--extra spark`: none of these tools import pyspark, and the sdist
-        # is 455 MB. `pytest` is imported by the ruff/flake8 plugin discovery
-        # path, so the dev group is installed rather than the bare package.
-        run: uv sync --frozen --no-extra spark
+            - name: Install the project (test + tooling dependencies)
+              # No `--extra spark`: none of these tools import pyspark, and the sdist
+              # is 455 MB. `pytest` is imported by the ruff/flake8 plugin discovery
+              # path, so the dev group is installed rather than the bare package.
+              run: uv sync --frozen --no-extra spark
 
-      - name: isort (import order, profile=black, 120 cols)
-        run: uv run isort --check-only --diff orchestration/ingestion/src orchestration/ingestion/tests use_case
+            - name: isort (import order, profile=black, 120 cols)
+              run: uv run isort --check-only --diff orchestration/ingestion/src orchestration/ingestion/tests use_case
 
-      - name: black (formatting, 120 cols)
-        run: uv run black --check --diff --line-length=120 orchestration/ingestion/src orchestration/ingestion/tests use_case
+            - name: black (formatting, 120 cols)
+              run: uv run black --check --diff --line-length=120 orchestration/ingestion/src orchestration/ingestion/tests use_case
 
-      - name: flake8 (pycodestyle + pyflakes, 120 cols)
-        run: uv run flake8 --config=.flake8 orchestration/ingestion/src orchestration/ingestion/tests use_case
+            - name: flake8 (pycodestyle + pyflakes, 120 cols)
+              run: uv run flake8 --config=.flake8 orchestration/ingestion/src orchestration/ingestion/tests use_case
 
-      - name: ruff (pyupgrade + bugbear + import order)
-        # `check` only. `ruff format` is not run because it disagrees with black
-        # on a handful of string-concatenation lines, and CI must not demand a
-        # style that the formatter used for commits rejects.
-        run: uv run ruff check --output-format=github orchestration/ingestion/src orchestration/ingestion/tests use_case
+            - name: ruff (pyupgrade + bugbear + import order)
+              # `check` only. `ruff format` is not run because it disagrees with black
+              # on a handful of string-concatenation lines, and CI must not demand a
+              # style that the formatter used for commits rejects.
+              run: uv run ruff check --output-format=github orchestration/ingestion/src orchestration/ingestion/tests use_case
 
-      - name: mypy (types)
-        run: uv run mypy --config-file=pyproject.toml orchestration/ingestion/src orchestration/ingestion/tests use_case
+            - name: mypy (types)
+              run: uv run mypy --config-file=pyproject.toml orchestration/ingestion/src orchestration/ingestion/tests use_case
 
-      - name: pylint (project conventions)
-        run: uv run pylint --rcfile=.pylintrc orchestration/ingestion/src use_case
+            - name: pylint (project conventions)
+              run: uv run pylint --rcfile=.pylintrc orchestration/ingestion/src use_case
 
-  # ---------------------------------------------------------------------------
-  # SQL: dbt v2's native linter and formatter, driven by the same `.sqlfluff`
-  # file the pre-commit hooks read. No Spark Thrift server is needed: `lint`,
-  # `format` and `parse` all work from the static project.
-  # ---------------------------------------------------------------------------
-  sql-quality:
-    name: SQL quality
-    runs-on: ubuntu-24.04
-    env:
-      # The Spark adapter is compiled into the dbt v2 binary but gated behind
-      # this flag; without it every command aborts with dbt1005 before parsing
-      # anything, including `lint`.
-      DBT_ALLOW_EXPERIMENTAL_ADAPTERS: "true"
-      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
-      # Silences the "no dbt_cloud.yml" warning. The Semantic Layer validation
-      # that would need it is Cloud-only, which is why this project validates
-      # the semantic YAML through `dbt parse` instead.
-      DBT_ENGINE_NO_WARN_SEMANTIC_MANIFEST_VALIDATION: "true"
-    steps:
-      - uses: actions/checkout@v4
+    # ---------------------------------------------------------------------------
+    # SQL: dbt v2's native linter and formatter, driven by the same `.sqlfluff`
+    # file the pre-commit hooks read. No Spark Thrift server is needed: `lint`,
+    # `format` and `parse` all work from the static project.
+    # ---------------------------------------------------------------------------
+    sql-quality:
+        name: SQL quality
+        runs-on: ubuntu-24.04
+        env:
+            # The Spark adapter is compiled into the dbt v2 binary but gated behind
+            # this flag; without it every command aborts with dbt1005 before parsing
+            # anything, including `lint`.
+            DBT_ALLOW_EXPERIMENTAL_ADAPTERS: "true"
+            DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+            # Silences the "no dbt_cloud.yml" warning. The Semantic Layer validation
+            # that would need it is Cloud-only, which is why this project validates
+            # the semantic YAML through `dbt parse` instead.
+            DBT_ENGINE_NO_WARN_SEMANTIC_MANIFEST_VALIDATION: "true"
+        steps:
+            - uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          python-version: "3.12"
+            - name: Install uv
+              uses: astral-sh/setup-uv@v7
+              with:
+                  enable-cache: true
+                  cache-dependency-glob: uv.lock
+                  python-version: "3.12"
 
-      - name: Install dbt
-        # `--no-extra spark` again: the Spark *Python* package is unrelated to
-        # dbt's Spark adapter, which ships inside the dbt binary.
-        run: uv sync --frozen --no-extra spark --extra dbt
+            - name: Install dbt
+              # `--no-extra spark` again: the Spark *Python* package is unrelated to
+              # dbt's Spark adapter, which ships inside the dbt binary.
+              run: uv sync --frozen --no-extra spark --extra dbt
 
-      - name: dbt parse (compiles the project and the semantic layer)
-        # Runs first so a malformed manifest fails fast, before the linter
-        # spends time templating every model. It also writes target/manifest.json.
-        run: uv run dbt parse --project-dir=dbt_lakehouse --profiles-dir=dbt_lakehouse
+            - name: dbt parse (compiles the project and the semantic layer)
+              # Runs first so a malformed manifest fails fast, before the linter
+              # spends time templating every model. It also writes target/manifest.json.
+              run: uv run dbt parse --project-dir=dbt_lakehouse --profiles-dir=dbt_lakehouse
 
-      - name: dbt format (check)
-        # Exits 1 when a file would be reformatted.
-        run: uv run dbt format --check --project-dir=dbt_lakehouse --profiles-dir=dbt_lakehouse
+            - name: dbt format (check)
+              # Exits 1 when a file would be reformatted.
+              run: uv run dbt format --check --project-dir=dbt_lakehouse --profiles-dir=dbt_lakehouse
 
-      - name: dbt lint
-        # Plain `lint`, not `lint --fix`: `--fix` always exits 0 and therefore
-        # cannot gate anything. The violations `lint` reports are all fixable
-        # locally with `make dbt-format`.
-        run: uv run dbt lint --project-dir=dbt_lakehouse --profiles-dir=dbt_lakehouse
+            - name: dbt lint
+              # Plain `lint`, not `lint --fix`: `--fix` always exits 0 and therefore
+              # cannot gate anything. The violations `lint` reports are all fixable
+              # locally with `make dbt-format`.
+              run: uv run dbt lint --project-dir=dbt_lakehouse --profiles-dir=dbt_lakehouse
 
-      - name: Upload the compiled manifest on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dbt-target
-          path: dbt_lakehouse/target/
-          retention-days: 3
-          if-no-files-found: ignore
+            - name: Upload the compiled manifest on failure
+              if: failure()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: dbt-target
+                  path: dbt_lakehouse/target/
+                  retention-days: 3
+                  if-no-files-found: ignore
 
-  # ---------------------------------------------------------------------------
-  # Tests: the unit suite plus a Dagster definition-load check. The suite is
-  # mocked throughout (no RustFS, no Unity Catalog, no Thrift server), but it
-  # does import the iceberg package, which imports `delta.tables` at module
-  # level -- hence the spark extra.
-  # ---------------------------------------------------------------------------
-  tests:
-    name: Unit tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        # Both ends of the range in pyproject.toml (requires-python
-        # ">=3.11,<3.13"). The lower bound is where `X | Y` annotations and
-        # `from __future__ import annotations` stop being interchangeable, so it
-        # is worth exercising.
-        python-version: ["3.11", "3.12"]
-    steps:
-      - uses: actions/checkout@v4
+    # ---------------------------------------------------------------------------
+    # Tests: the unit suite plus a Dagster definition-load check. The suite is
+    # mocked throughout (no RustFS, no Unity Catalog, no Thrift server), but it
+    # does import the iceberg package, which imports `delta.tables` at module
+    # level -- hence the spark extra.
+    # ---------------------------------------------------------------------------
+    tests:
+        name: Unit tests (Python ${{ matrix.python-version }})
+        runs-on: ubuntu-24.04
+        strategy:
+            fail-fast: false
+            matrix:
+                # Both ends of the range in pyproject.toml (requires-python
+                # ">=3.11,<3.13"). The lower bound is where `X | Y` annotations and
+                # `from __future__ import annotations` stop being interchangeable, so it
+                # is worth exercising.
+                python-version: ["3.11", "3.12"]
+        steps:
+            - uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          python-version: ${{ matrix.python-version }}
+            - name: Install uv
+              uses: astral-sh/setup-uv@v7
+              with:
+                  enable-cache: true
+                  cache-dependency-glob: uv.lock
+                  python-version: ${{ matrix.python-version }}
 
-      - name: Install the project with the Spark runtime
-        run: uv sync --frozen --extra spark --extra dbt
+            - name: Install the project with the Spark runtime
+              run: uv sync --frozen --extra spark --extra dbt
 
-      - name: Run the unit tests
-        # Coverage and the `--cov-fail-under=80` gate live in
-        # [tool.pytest.ini_options], so plain `pytest` enforces them. On 3.11
-        # coverage measures the same source tree, so repeating the gate there is
-        # intentional: it catches a version-specific branch that is never taken.
-        run: uv run pytest
+            - name: Run the unit tests
+              # Coverage and the `--cov-fail-under=80` gate live in
+              # [tool.pytest.ini_options], so plain `pytest` enforces them. On 3.11
+              # coverage measures the same source tree, so repeating the gate there is
+              # intentional: it catches a version-specific branch that is never taken.
+              run: uv run pytest
 
-      - name: Validate the Dagster definitions
-        # Loading the repo-local `use_case` package builds every asset and
-        # resource. This catches a broken factory or a missing platform field
-        # that the unit tests would only reach through a narrow fixture.
-        # The dbt manifest is absent on a fresh checkout (target/ is gitignored),
-        # which is a supported state: build_definitions skips the dbt resource
-        # and logs a warning.
-        run: uv run dagster definitions validate -w workspace.yaml
+            - name: Validate the Dagster definitions
+              # Loading the repo-local `use_case` package builds every asset and
+              # resource. This catches a broken factory or a missing platform field
+              # that the unit tests would only reach through a narrow fixture.
+              # The dbt manifest is absent on a fresh checkout (target/ is gitignored),
+              # which is a supported state: build_definitions skips the dbt resource
+              # and logs a warning.
+              run: uv run dagster definitions validate -w workspace.yaml
 
-      - name: Upload the coverage report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.python-version }}
-          path: .coverage
-          retention-days: 3
-          if-no-files-found: ignore
+            - name: Upload the coverage report on failure
+              if: failure()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: coverage-${{ matrix.python-version }}
+                  path: .coverage
+                  retention-days: 3
+                  if-no-files-found: ignore

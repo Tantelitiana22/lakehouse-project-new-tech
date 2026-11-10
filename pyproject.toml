@@ -39,7 +39,12 @@ postgres = ["dagster-postgres>=0.25.0,<1"]
 # their own isolated venvs and are the ones that must pass before a commit, while
 # ruff adds the pyupgrade (UP) and bugbear (B) rule sets the other three do not
 # implement.
-dev = ["pytest>=8.3.0", "pytest-cov>=5.0.0", "pytest-mock>=3.14.0", "ruff>=0.14.4"]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.14.4",
+]
 # The same five tools pre-commit runs, at the *same pinned versions*. Without
 # this group `uv run isort` and friends fail with "Failed to spawn" -- pre-commit
 # installs each hook into its own throwaway venv, so nothing lands in .venv.
