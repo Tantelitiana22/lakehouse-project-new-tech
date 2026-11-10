@@ -320,10 +320,15 @@ schedules:
 
 `enabled: true` registers the schedule as running; `false` registers it as
 stopped, so it stays visible in **Automation** and can be started from the UI.
-Omit `selection` to materialize every asset in dependency order, or narrow it
-with `selection: {groups: [landing, bronze, dbt, semantic]}` or
+This is the **initial** status only: once Dagster has stored a state for the
+schedule (after its first tick, or after someone toggles it in the UI), that
+persisted state wins. Editing `enabled` afterwards has no effect until the
+stored state is cleared; use the toggle in **Automation** instead. Omit
+`selection` to materialize every asset in dependency order, or narrow it with
+`selection: {groups: [landing, bronze, dbt, semantic]}` or
 `selection: {assets: [["lakehouse", "bronze", "dvf_mutations_77"]]}`. A
-selection that matches no asset fails at load instead of ticking an empty job.
+selection naming an unknown group or asset, or matching no asset at all, fails
+at load instead of ticking a partial or empty job.
 
 `./use_case` is bind-mounted into both Dagster containers, so applying an edit
 does not need an image rebuild — only a restart, because both processes load the

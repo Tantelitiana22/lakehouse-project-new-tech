@@ -484,3 +484,29 @@ def test_build_definitions_has_no_schedules_without_a_file(write_use_case, asset
     definitions = build_definitions("demo", root=manifest.parent.parent, register_dbt=False, sync_sources=False)
 
     assert not definitions.schedules
+
+
+def test_build_definitions_rejects_an_unknown_group_in_a_selection(write_use_case, asset_payload):
+    from dagster import DagsterInvalidDefinitionError
+
+    from ndr_lakehouse.orchestration.definitions import build_definitions
+
+    manifest = write_use_case("demo")
+    (manifest.parent / "assets" / "demo.yaml").write_text(yaml.safe_dump(asset_payload), encoding="utf-8")
+    (manifest.parent / "schedule.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schedules": [
+                    {
+                        "name": "daily",
+                        "cron": "0 6 * * *",
+                        "selection": {"groups": ["landing", "nope"]},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DagsterInvalidDefinitionError, match="unknown group.*nope"):
+        build_definitions("demo", root=manifest.parent.parent, register_dbt=False, sync_sources=False)

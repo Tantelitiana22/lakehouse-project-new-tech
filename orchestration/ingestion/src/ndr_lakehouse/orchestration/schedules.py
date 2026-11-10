@@ -9,6 +9,7 @@ import yaml
 from dagster import (
     AssetSelection,
     DagsterInvalidDefinitionError,
+    DagsterInvalidSubsetError,
     DefaultScheduleStatus,
     Definitions,
     ScheduleDefinition,
@@ -123,10 +124,23 @@ def build_schedules(specs: Sequence[ScheduleSpec]) -> list[ScheduleDefinition]:
     return schedules
 
 
-def validate_schedule_targets(definitions: Definitions) -> None:
-    """Fail loudly when a schedule would run an empty selection."""
+def validate_schedule_targets(definitions: Definitions, specs: Sequence[ScheduleSpec]) -> None:
+    """Fail loudly when a schedule names an unknown group/asset or selects nothing."""
+    if not specs:
+        return
     graph = definitions.resolve_asset_graph()
-    for schedule in definitions.schedules or []:
-        selection = getattr(schedule.job, "selection", None)
-        if selection is not None and not selection.resolve(graph):
-            raise DagsterInvalidDefinitionError(f"schedule {schedule.name!r} selects no assets")
+    known_groups = set(graph.all_group_names)
+    for spec in specs:
+        selection = spec.selection
+        if selection is not None and selection.groups is not None:
+            unknown_groups = sorted(set(selection.groups) - known_groups)
+            if unknown_groups:
+                raise DagsterInvalidDefinitionError(
+                    f"schedule {spec.name!r} selects unknown group(s): {', '.join(unknown_groups)}"
+                )
+        try:
+            resolved = _asset_selection(selection).resolve(graph)
+        except DagsterInvalidSubsetError as exc:
+            raise DagsterInvalidDefinitionError(f"schedule {spec.name!r} selects unknown assets: {exc}") from exc
+        if not resolved:
+            raise DagsterInvalidDefinitionError(f"schedule {spec.name!r} selects no assets")

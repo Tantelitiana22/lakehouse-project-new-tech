@@ -10,9 +10,7 @@ from dagster import (
     DagsterInvalidDefinitionError,
     DefaultScheduleStatus,
     Definitions,
-    ScheduleDefinition,
     asset,
-    define_asset_job,
 )
 from pydantic import ValidationError
 
@@ -121,25 +119,34 @@ def test_selection_maps_to_the_job_selection():
 
 
 def test_schedule_selecting_no_assets_is_rejected():
+    spec = ScheduleSpec(name="empty", cron="0 6 * * *")
+    with pytest.raises(DagsterInvalidDefinitionError, match="selects no assets"):
+        validate_schedule_targets(Definitions(assets=[]), [spec])
+
+
+def test_schedule_with_unknown_group_in_a_partial_selection_is_rejected():
     @asset(group_name="landing")
     def _a(): ...
 
-    schedule = ScheduleDefinition(
-        name="empty",
-        job=define_asset_job(name="empty_job", selection=AssetSelection.groups("nope")),
-        cron_schedule="0 6 * * *",
+    spec = ScheduleSpec(name="partial", cron="0 6 * * *", selection=ScheduleSelection(groups=["landing", "nope"]))
+    with pytest.raises(DagsterInvalidDefinitionError, match="unknown group.*nope"):
+        validate_schedule_targets(Definitions(assets=[_a]), [spec])
+
+
+def test_schedule_with_unknown_asset_key_names_the_schedule():
+    @asset(group_name="landing")
+    def _a(): ...
+
+    spec = ScheduleSpec(
+        name="badkey", cron="0 6 * * *", selection=ScheduleSelection(assets=[["lakehouse", "bronze", "nope"]])
     )
-    with pytest.raises(DagsterInvalidDefinitionError, match="selects no assets"):
-        validate_schedule_targets(Definitions(assets=[_a], schedules=[schedule]))
+    with pytest.raises(DagsterInvalidDefinitionError, match="'badkey'.*unknown assets"):
+        validate_schedule_targets(Definitions(assets=[_a]), [spec])
 
 
 def test_schedule_selecting_assets_passes_validation():
     @asset(group_name="landing")
     def _a(): ...
 
-    schedule = ScheduleDefinition(
-        name="ok",
-        job=define_asset_job(name="ok_job", selection=AssetSelection.groups("landing")),
-        cron_schedule="0 6 * * *",
-    )
-    validate_schedule_targets(Definitions(assets=[_a], schedules=[schedule]))
+    spec = ScheduleSpec(name="ok", cron="0 6 * * *", selection=ScheduleSelection(groups=["landing"]))
+    validate_schedule_targets(Definitions(assets=[_a]), [spec])

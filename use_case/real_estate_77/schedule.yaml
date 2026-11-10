@@ -4,7 +4,8 @@
 # Edit the cron below, then reload/restart the Dagster processes. With the
 # compose bind mount, no image rebuild is needed. Standard five-field cron:
 #   minute hour day-of-month month day-of-week
-# Set enabled: false to register the schedule as stopped.
+# Set enabled: false to register the schedule as stopped. This initial status
+# only applies until Dagster stores one; a manual UI toggle wins afterwards.
 # ---------------------------------------------------------------------------
 schedules:
   - name: daily_lakehouse_refresh

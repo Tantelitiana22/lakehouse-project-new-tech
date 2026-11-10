@@ -91,10 +91,11 @@ def build_definitions(
                 ),
             ]
 
+    schedule_specs = load_schedule_specs(config)
     definitions = Definitions(
         assets=assets,
         resources=resources,
-        schedules=build_schedules(load_schedule_specs(config)),
+        schedules=build_schedules(schedule_specs),
     )
-    validate_schedule_targets(definitions)
+    validate_schedule_targets(definitions, schedule_specs)
     return definitions
