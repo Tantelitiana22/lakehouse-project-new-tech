@@ -1,0 +1,13 @@
+[sqlfluff]
+# The dbt project targets Spark (dbt_lakehouse/profiles.yml -> type: spark), so
+# this is the dialect that can actually parse the models. `trino` cannot.
+dialect = sparksql
+templater = jinja
+max_line_length = 100
+
+[sqlfluff:templater:jinja:context]
+# dbt macros such as {{ source(...) }} and {{ config(...) }} are undefined when
+# linting standalone, so keep the templater permissive.
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 4

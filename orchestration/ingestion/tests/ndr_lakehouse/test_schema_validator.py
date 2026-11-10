@@ -5,13 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
+
 from ndr_lakehouse.asset_property.schema_validator import (
     discover_asset_configs,
     load_asset_config_file,
     parse_asset_config,
     parse_platform_config,
 )
-from pydantic import ValidationError
 
 
 @pytest.mark.parametrize(

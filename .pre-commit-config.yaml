@@ -1,0 +1,87 @@
+# Pre-commit hooks.
+#
+# Install once with `pre-commit install`, then hooks run on `git commit`.
+# Run the whole suite against every file with `pre-commit run --all-files`.
+#
+# Line length is 100 everywhere: that is what `pyproject.toml` already sets for
+# ruff, and it is the longest line the code actually has. black, isort and
+# flake8 are all pinned to the same value so they cannot fight each other.
+default_language_version:
+  python: python3.12
+
+repos:
+  - repo: https://github.com/PyCQA/isort
+    rev: 6.0.1
+    hooks:
+      # Configured entirely in [tool.isort] in pyproject.toml (profile, line
+      # length and known_first_party), so no CLI flags are needed here.
+      - id: isort
+
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+        args: [--line-length=100]
+
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.2.0
+    hooks:
+      - id: flake8
+        # flake8 defaults to 79 columns and is not configured anywhere, which
+        # would flag 242 lines. Delegate the limit to .flake8 instead.
+        args: [--config=.flake8]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.16.0
+    hooks:
+      - id: mypy
+        # `requests` and `croniter` are stubs for packages this project does
+        # not import at all, so they are not listed here. `types-PyYAML` is,
+        # because `import yaml` appears in the codebase.
+        additional_dependencies:
+          - types-PyYAML
+          - pydantic
+        # Settings (python_version, ignore_missing_imports) live in
+        # [tool.mypy] in pyproject.toml, so only the config path is passed.
+        args: [--config-file=pyproject.toml]
+
+  - repo: https://github.com/PyCQA/pylint
+    rev: v3.3.7
+    hooks:
+      - id: pylint
+        # pylint resolves imports from the environment it runs in. Without the
+        # project's own dependencies it reports 22 spurious `import-error`s and
+        # cannot see the packages at all. dagster and pyspark live in optional
+        # extras, so they have to be listed explicitly rather than pulled from
+        # the base dependencies.
+        additional_dependencies:
+          - pydantic>=2.8.0,<3
+          - PyYAML>=6.0.1,<7
+          - boto3>=1.34.0,<2
+          - httpx>=0.27.0,<1
+          - dagster>=1.9.0,<2
+        args:
+          - --rcfile=.pylintrc
+          - --ignore-paths=^orchestration/ingestion/tests/
+        exclude: ^orchestration/ingestion/tests/
+
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 3.4.1
+    hooks:
+      # `fix` must come first: pre-commit stops at the first failing hook, so
+      # running `lint` first would block the fixer from ever correcting the
+      # layout issues it exists for.
+      - id: sqlfluff-fix
+        # --force is not needed: fixing without confirmation is the default
+        # behaviour in sqlfluff 3.x.
+        args:
+          - --dialect=sparksql
+          - --config=.sqlfluff
+          - --rules=AL01,AL02,LT01,LT02,LT05,CP02,ST06
+        files: ^dbt_lakehouse/.*\.sql$
+      - id: sqlfluff-lint
+        # The dbt project targets Spark (see dbt_lakehouse/profiles.yml), so
+        # `trino` is the wrong flavour: it cannot parse the files at all and
+        # emits PRS errors on valid Spark SQL.
+        args: [--dialect=sparksql, --config=.sqlfluff]
+        files: ^dbt_lakehouse/.*\.sql$

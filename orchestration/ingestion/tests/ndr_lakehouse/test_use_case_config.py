@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
+
 from ndr_lakehouse.asset_property.use_case import (
     discover_use_case_configs,
     load_use_case_config,
     resolve_use_case,
 )
 from ndr_lakehouse.domain.errors import AmbiguousDefaultUseCaseError, UseCaseNotFoundError
-from pydantic import ValidationError
 
 
 def test_manifest_paths_resolve_against_manifest_directory(tmp_path, write_use_case):

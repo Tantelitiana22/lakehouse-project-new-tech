@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dagster import AssetKey
+
 from ndr_lakehouse.orchestration.dbt_assets import build_dbt_assets
 
 

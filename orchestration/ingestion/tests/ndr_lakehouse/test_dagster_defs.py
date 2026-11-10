@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 import yaml
 from dagster import AssetKey, materialize
+
 from ndr_lakehouse.iceberg.resource import SparkIcebergResource
 from ndr_lakehouse.landing.resource import NativeIngestorResource
 from ndr_lakehouse.orchestration.assets import (
@@ -330,9 +331,7 @@ def test_resource_bundle_warns_when_dbt_project_is_missing(write_use_case, caplo
     assert any("dbt_project.yml" in record.message for record in caplog.records)
 
 
-def test_resource_bundle_warns_when_dbt_manifest_is_missing(
-    write_use_case, tmp_path, caplog
-):
+def test_resource_bundle_warns_when_dbt_manifest_is_missing(write_use_case, tmp_path, caplog):
     from ndr_lakehouse.asset_property.use_case import load_use_case_config
     from ndr_lakehouse.orchestration.resources import build_resource_bundle
 

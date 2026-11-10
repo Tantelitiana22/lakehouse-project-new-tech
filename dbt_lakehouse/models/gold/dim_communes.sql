@@ -15,14 +15,14 @@ deduplicated as (
 )
 
 select
-    cast(code as string)                              as commune_code,
-    cast(nom as string)                               as commune_name,
-    cast(code_departement as string)                  as department_code,
-    cast(code_region as string)                       as region_code,
-    cast(code_epci as string)                         as epci_code,
-    cast(population as bigint)                        as population,
-    cast(centre.coordinates[0] as double)             as longitude,
-    cast(centre.coordinates[1] as double)             as latitude,
-    _ingested_at
+    cast(deduplicated.code as string) as commune_code,
+    cast(deduplicated.nom as string) as commune_name,
+    cast(deduplicated.code_departement as string) as department_code,
+    cast(deduplicated.code_region as string) as region_code,
+    cast(deduplicated.code_epci as string) as epci_code,
+    cast(deduplicated.population as bigint) as population,
+    cast(deduplicated.centre.coordinates[0] as double) as longitude,
+    cast(deduplicated.centre.coordinates[1] as double) as latitude,
+    deduplicated._ingested_at
 from deduplicated
-where ingest_row_number = 1
+where deduplicated.ingest_row_number = 1
