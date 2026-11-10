@@ -54,6 +54,11 @@ jobs:
               uses: astral-sh/setup-uv@v7
               with:
                   enable-cache: true
+                  # Distinct per job: all three install on the same runner
+                  # image and Python version, so a shared key makes them
+                  # race and one fails with "Unable to reserve cache ...
+                  # another job may be creating this cache".
+                  cache-suffix: python-quality
                   cache-dependency-glob: uv.lock
                   python-version: "3.12"
 
@@ -109,6 +114,11 @@ jobs:
               uses: astral-sh/setup-uv@v7
               with:
                   enable-cache: true
+                  # Distinct per job: all three install on the same runner
+                  # image and Python version, so a shared key makes them
+                  # race and one fails with "Unable to reserve cache ...
+                  # another job may be creating this cache".
+                  cache-suffix: sql-quality
                   cache-dependency-glob: uv.lock
                   python-version: "3.12"
 
@@ -165,6 +175,11 @@ jobs:
               uses: astral-sh/setup-uv@v7
               with:
                   enable-cache: true
+                  # Distinct per job: all three install on the same runner
+                  # image and Python version, so a shared key makes them
+                  # race and one fails with "Unable to reserve cache ...
+                  # another job may be creating this cache".
+                  cache-suffix: tests
                   cache-dependency-glob: uv.lock
                   python-version: ${{ matrix.python-version }}
 
