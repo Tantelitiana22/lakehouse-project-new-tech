@@ -11,32 +11,80 @@ that describes *what* to ingest lives in `use_case/`, one directory per use case
 Adding a data source or a new business domain means adding a directory under
 `use_case/` — the library does not change.
 
+## Tech stack
+
+| Layer | Technology | Notes |
+|---|---|---|
+| Language | Python 3.11 / 3.12 | pinned in `pyproject.toml` |
+| Orchestration | Dagster 1.13 (`dagster-webserver`, `dagster-daemon`, `dagster-postgres`) | assets, jobs, schedules, UI |
+| Declarative contracts | Pydantic v2 + PyYAML | validates every YAML file at load time |
+| Ingestion | `httpx` + `boto3` | retries, pagination strategies, S3/HTTP extractors |
+| Object storage | RustFS | S3-compatible landing zone and warehouse |
+| Table format | Delta Lake 4.3.1 with UniForm | writes Iceberg metadata in the same commit |
+| Compute | Apache Spark 4.1.1 (Scala 2.13, Java 17) | in-process writer + Thrift server for dbt |
+| Catalog | Unity Catalog OSS (REST) + UI | `catalog.schema.table`, Iceberg REST reads |
+| Transformation | dbt 2.0.11 (Spark adapter) | staging, Gold and semantic models |
+| Semantic layer | dbt Semantic Layer / MetricFlow (`dbt sl`) | `prix_moyen_m2` and simple metrics |
+| State | PostgreSQL 16 | Dagster run history, event log, schedule ticks |
+| Runtime | Docker Compose | one `make up` for the whole stack |
+
 ## Architecture
 
+```mermaid
+flowchart LR
+    subgraph sources["Data sources"]
+        HTTP["HTTP APIs"]
+        S3SRC["S3 objects"]
+    end
+
+    subgraph dagster["Dagster orchestration<br/>dagster-webserver + dagster-daemon"]
+        LANDING["landing asset<br/>retrying client + pagination"]
+        BRONZE["bronze asset<br/>Spark normalize / dedup / write"]
+    end
+
+    subgraph storage["RustFS (S3-compatible)"]
+        LZ[("landing-zone<br/>native payloads")]
+        WH[("lakehouse<br/>Delta + UniForm")]
+    end
+
+    UC["Unity Catalog OSS<br/>catalog.schema.table"]
+    SPARK["Spark Thrift Server<br/>:10000"]
+    DBT["dbt 2.0<br/>staging → Gold"]
+    SEM["Semantic Layer<br/>prix_moyen_m2"]
+    PG[("Postgres<br/>Dagster state")]
+
+    HTTP --> LANDING
+    S3SRC --> LANDING
+    LANDING -->|"part files"| LZ
+    LANDING --> BRONZE
+    BRONZE -->|"Delta + UniForm"| WH
+    BRONZE -->|"create namespace"| UC
+    UC -.->|"read-only Iceberg REST"| WH
+    WH --> SPARK
+    SPARK --> DBT
+    DBT -->|"Gold Delta tables"| WH
+    DBT --> SEM
+    dagster -.->|"run history / schedule ticks"| PG
 ```
-HTTP / S3 sources
-      │  (declarative YAML)
-      ▼
-landing/  ───────────────────────────► s3://landing-zone/<prefix>/ingest_date=YYYY-MM-DD/
-  RetryingHttpClient + pagination strategies          │
-  ExtractorFactory + LandingWriter                    ▼
-                                             iceberg/
-                                               NativeDatasetReader
-                                               DataFrameTransformer (sanitize + dedup)
-                                               WriteStrategyFactory (overwrite/append/merge)
-                                               SchemaEvolutionService
-                                             │
-                        ┌────────────────────┴───────────────────┐
-                        ▼                                        ▼
-             Unity Catalog OSS (REST)                  Delta + UniForm Iceberg metadata
-             catalog.schema.table                     on RustFS (s3://lakehouse/warehouse)
-                        │
-                        ▼
-                  dbt (Spark Thrift)  ──►  lakehouse.gold.*
-                        │
-                        ▼
-        Semantic Layer (dbt metrics, prix_moyen_m2)
-```
+
+The service map behind that flow:
+
+| Service | Role |
+|---|---|
+| `dagster-webserver` | UI/API on `:3000`; loads the `use_case` code location and launches runs |
+| `dagster-daemon` | fires schedules and sensors, queues runs; required for automation |
+| `postgres` | Dagster's own bookkeeping — run history, event log, schedule state |
+| `rustfs` | S3-compatible store: `landing-zone` for raw payloads, `lakehouse` for table data |
+| `init-buckets` | one-shot job that creates both buckets |
+| `unity-catalog` | Unity Catalog OSS REST API; exposes the Iceberg REST read endpoint |
+| `unity-catalog-ui` | Unity Catalog web UI on `:3001` |
+| `spark-thrift` | Spark Thrift server on `:10000`; the endpoint dbt connects to |
+
+Ingestion assets run inside the Dagster container: Python downloads the payload
+to `landing-zone`, then an in-process `SparkSession` (same pinned Spark/Delta/Iceberg
+jars as the Thrift server) reads it, sanitizes and deduplicates it, and writes the
+Bronze table to `lakehouse/warehouse`. Provisioning of buckets and Unity Catalog
+namespaces happens before either step.
 
 There is **no Hive Metastore**. Tables are written as Delta Lake with UniForm
 enabled, which emits Iceberg metadata. Unity Catalog OSS remains available as a
@@ -45,6 +93,107 @@ read-only Iceberg REST catalog:
 ```
 http://unity-catalog:8080/api/2.1/unity-catalog/iceberg
 ```
+
+## Ingesting a new source
+
+Ingestion is configuration-only. Do not edit Python unless the source needs
+behaviour YAML cannot express (see the handler escape hatch below).
+
+1. **Declare the source** in a YAML file under `use_case/<use_case>/assets/`
+   (create the file or extend an existing one). The minimum shape is one entry
+   with `source_properties` and `catalog_properties`:
+
+   ```yaml
+   assets:
+     - name: my_new_source
+       group_name: bronze
+       source_properties:
+         type: http                 # or s3
+         url: https://api.example.fr/records
+         native_format: json        # csv, csv.gz, json, parquet, ...
+         landing_bucket: landing-zone
+         s3_prefix: raw/my-domain/my_new_source
+         pagination:
+           strategy: none           # none, page_number, offset, cursor, next_url, link_header
+       catalog_properties:
+         catalog_name: lakehouse
+         schema_name: bronze
+         table_name: my_new_source
+         write_mode: overwrite      # overwrite, append, merge
+         primary_keys: [id]         # mandatory for merge
+         dedup_order_by: _ingested_at
+         partition_by: [code_commune]
+   ```
+
+   The generated Dagster keys are always
+   `AssetKey(["landing", "<name>"])` for the raw payload and
+   `AssetKey(["<catalog>", "<schema>", "<table>"])` for Bronze.
+
+2. **Start the stack** with `make up`. Both Dagster processes load the
+   `use_case` code location from `workspace.yaml`; the asset factory discovers
+   the new YAML, and `sync_dbt_sources` regenerates
+   `dbt_lakehouse/models/staging/_sources.yml` so dbt can see the table.
+
+3. **Materialize it** — all assets with `make ingest`, only the new source from
+   the Dagster UI (select the landing and Bronze assets), or by adding the
+   selection to `use_case/<use_case>/schedule.yaml` so it runs on a cron.
+
+What happens during a run:
+
+| Step | Where | What |
+|---|---|---|
+| 1 | `dagster-webserver` (run worker) | provisions the RustFS buckets and the `catalog.schema` namespace (S3 + Unity Catalog) |
+| 2 | same process, `landing/` | downloads every page/part with retries and writes native bytes to `s3://landing-zone/<prefix>/ingest_date=.../` |
+| 3 | same process, `iceberg/` | an in-process Spark session reads the landed files, sanitizes columns, deduplicates on the primary key, evolves the schema and writes Bronze |
+| 4 | `rustfs` | stores the Delta table with UniForm enabled, so Iceberg metadata exists in the same commit |
+| 5 | `unity-catalog` | holds the `catalog.schema.table` registration; `unity-catalog-ui` shows it on `:3001` |
+
+Verify the result in Dagster's asset metadata (`row_count`, `write_mode`,
+`table_properties`, `snapshot`) and in the Unity Catalog UI. For a source that
+needs custom Python, add `handler: my_package.module:MyHandler` next to `name`
+instead of forking the library; the contract is described under
+[Escape hatch: per-use-case Python](#escape-hatch-per-use-case-python).
+
+## Transforming data and building the semantic layer
+
+Transformation is a separate dbt project, `dbt_lakehouse/`, that reads Bronze
+through the Spark Thrift server (`thrift://spark-thrift:10000`) and writes Gold
+tables back to the same RustFS warehouse.
+
+| dbt layer | Location | What it does |
+|---|---|---|
+| staging | `models/staging/_sources.yml` | generated by the ingestion graph; declares Bronze tables as dbt sources |
+| Gold | `models/gold/*.sql` | `dim_*` and `fct_*` models, materialized as Delta tables with UniForm enabled |
+| semantic | `models/semantic/` | the time spine plus `semantic_models.yml` (entities, dimensions, simple metrics, ratio metric) |
+
+Build everything with:
+
+```bash
+make dbt-build      # dbt build: Gold + semantic models (sources resolved from Bronze)
+make dbt-parse      # compile and validate the project/semantic graph
+make dbt-lint       # dbt's native SQL linter
+```
+
+When a compiled `dbt_lakehouse/target/manifest.json` exists, Dagster registers
+the models named in `gold_models` (from `use_case.yaml`) as dbt assets, plus the
+`metricflow_semantic_validation` asset that runs `dbt parse` after them. A
+scheduled or UI materialization then runs ingestion and dbt in dependency order.
+
+To add a Gold model:
+
+1. Create the SQL under `dbt_lakehouse/models/gold/`.
+2. Add its name to `gold_models` in `use_case/<use_case>/use_case.yaml`.
+3. Run `make dbt-parse` (or `make dbt-build`), then reload the Dagster code
+   location so the new dbt asset appears.
+
+The semantic layer uses the current dbt spec: entities and dimensions live on
+the semantic model's columns, simple metrics declare `agg` and `expr`, and
+`prix_moyen_m2` is a top-level ratio metric
+(`volume_ventes_eur / surface_vendue_m2`). Edit
+`dbt_lakehouse/models/semantic/semantic_models.yml` to add dimensions or
+metrics, then run `make dbt-parse` to validate the graph and query it with
+`dbt sl query --metrics prix_moyen_m2`. The caveats of self-hosted MetricFlow
+validation are covered under [Semantic layer](#semantic-layer).
 
 ## Layering and SOLID boundaries
 
