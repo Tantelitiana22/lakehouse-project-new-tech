@@ -10,22 +10,31 @@ from dagster import AssetKey
 def test_packaged_use_case_builds_the_full_graph():
     import use_case
 
-    keys = use_case.defs.resolve_all_asset_keys()
+    keys = set(use_case.defs.resolve_all_asset_keys())
     assert AssetKey(["landing", "communes_geo_77"]) in keys
     assert AssetKey(["lakehouse", "bronze", "dvf_mutations_77"]) in keys
     assert AssetKey(["lakehouse", "bronze", "dvf_lots_batis_77"]) in keys
 
-    # Pin the whole graph, not a sample: this environment has no dbt extra and no
-    # compiled manifest, so exactly the six ingestion keys are expected and the
-    # semantic asset must be absent rather than dangling on phantom deps.
-    assert len(keys) == 6
-    assert AssetKey("metricflow_semantic_validation") not in keys
+    # Pin the ingestion half of the graph, not a sample: these six keys are what
+    # the asset YAML produce and they must always be present.
+    ingestion_keys = {key for key in keys if key.path[0] in {"landing", "lakehouse"}}
+    assert len(ingestion_keys) == 6
+
+    # The dbt half is environment-dependent on purpose: it only appears when the
+    # ``dbt`` extra is installed *and* `dbt parse` has written a manifest (both
+    # are gitignored, so a clean checkout has neither). Assert the coupling
+    # instead of the count, which is the property that can actually break: dbt
+    # models are never registered without the resource that runs them.
+    dbt_model_keys = keys - ingestion_keys - {AssetKey("metricflow_semantic_validation")}
+    if dbt_model_keys:
+        assert "dbt" in use_case.defs.resources
+    else:
+        assert "dbt" not in use_case.defs.resources
+
+    # Whatever path was taken, the generic library must not hardcode use-case
+    # asset names, and the retired dagster-dbt asset must never come back.
     assert AssetKey("lakehouse_dbt_assets") not in keys
-    assert sorted(use_case.defs.resources) == [
-        "native_ingestor",
-        "spark_iceberg",
-        "uc_provisioner",
-    ]
+    assert {"native_ingestor", "spark_iceberg", "uc_provisioner"} <= use_case.defs.resources.keys()
 
 
 def test_no_asset_yaml_remains_in_the_library():

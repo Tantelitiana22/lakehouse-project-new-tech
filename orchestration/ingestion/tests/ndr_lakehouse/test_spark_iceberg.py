@@ -74,9 +74,7 @@ def test_evolve_target_schema_emits_alter_table_add_column(mocker):
     added = SchemaEvolutionService().evolve(spark, df, "lakehouse.bronze.demo_table")
 
     assert added == ["new_column"]
-    spark.sql.assert_called_once_with(
-        "ALTER TABLE lakehouse.bronze.demo_table ADD COLUMN new_column string"
-    )
+    spark.sql.assert_called_once_with("ALTER TABLE lakehouse.bronze.demo_table ADD COLUMN new_column string")
 
 
 def _merge_catalog(sample_asset_config, **updates):
@@ -158,10 +156,7 @@ def test_delta_merge_supports_delete_conditions(mocker, sample_asset_config):
 
 
 def test_build_merge_condition_returns_composite_clause():
-    assert (
-        DeltaMergeExecutor.build_merge_condition(["a", "b"])
-        == "target.a = source.a AND target.b = source.b"
-    )
+    assert DeltaMergeExecutor.build_merge_condition(["a", "b"]) == "target.a = source.a AND target.b = source.b"
 
 
 def test_write_overwrite_creates_uniform_delta_table(mocker, sample_asset_config):
@@ -208,9 +203,7 @@ def test_append_write_strategy_uses_merge_schema(mocker, sample_asset_config):
     df.write.format.assert_called_once_with("delta")
     writer.mode.assert_called_once_with("append")
     writer.option.assert_called_once_with("mergeSchema", "true")
-    writer.saveAsTable.assert_called_once_with(
-        sample_asset_config.catalog_properties.full_table_name
-    )
+    writer.saveAsTable.assert_called_once_with(sample_asset_config.catalog_properties.full_table_name)
 
 
 def test_merge_write_strategy_delegates_to_delta_executor(mocker, sample_asset_config):
@@ -260,15 +253,10 @@ def test_sync_tblproperties_includes_uniform_and_escapes_quotes(mocker):
 def test_spark_configs_use_delta_uniform_with_iceberg_rest_read_catalog():
     configs = SparkSessionFactory(_settings()).configs("lakehouse")
 
-    assert configs["spark.sql.catalog.lakehouse"] == (
-        "org.apache.spark.sql.delta.catalog.DeltaCatalog"
-    )
+    assert configs["spark.sql.catalog.lakehouse"] == ("org.apache.spark.sql.delta.catalog.DeltaCatalog")
     assert "io.delta.sql.DeltaSparkSessionExtension" in configs["spark.sql.extensions"]
     assert configs["spark.sql.catalog.iceberg_rest.type"] == "rest"
-    assert (
-        configs["spark.sql.catalog.iceberg_rest.uri"]
-        == "http://unity-catalog:8080/api/2.1/unity-catalog/iceberg"
-    )
+    assert configs["spark.sql.catalog.iceberg_rest.uri"] == "http://unity-catalog:8080/api/2.1/unity-catalog/iceberg"
     assert all("9083" not in value for value in configs.values())
 
 
@@ -290,9 +278,7 @@ def test_native_dataset_reader_maps_json_and_csv(mocker, sample_asset_config):
     spark.read.options.return_value = reader
     reader.json.return_value = "json-df"
 
-    result = NativeDatasetReader().read(
-        spark, source, "s3a://landing-zone/raw/demo", {"multiLine": "true"}
-    )
+    result = NativeDatasetReader().read(spark, source, "s3a://landing-zone/raw/demo", {"multiLine": "true"})
 
     assert result == "json-df"
     spark.read.options.assert_called_once_with(multiLine="true")

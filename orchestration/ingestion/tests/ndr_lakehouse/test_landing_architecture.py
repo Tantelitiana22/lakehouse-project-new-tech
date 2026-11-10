@@ -56,11 +56,7 @@ def test_pagination_factory_creates_each_strategy(asset_payload_factory):
     factory = PaginationFactory.default()
     for strategy, pagination in cases.items():
         source = _source(asset_payload_factory, pagination)
-        assert (
-            factory.create(source.pagination)
-            .__class__.__name__.lower()
-            .startswith(strategy.split("_")[0])
-        )
+        assert factory.create(source.pagination).__class__.__name__.lower().startswith(strategy.split("_")[0])
 
 
 def test_pagination_factory_rejects_unknown_strategy(asset_payload_factory):

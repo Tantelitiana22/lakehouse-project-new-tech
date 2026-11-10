@@ -2,7 +2,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose
 UV := uv
 
-.PHONY: help up down build restart logs ps dagster-dev ingest dbt-build dbt-parse mf-query test test-cov lint format clean
+.PHONY: help up down build restart logs ps dagster-dev ingest dbt-build dbt-parse dbt-lint dbt-format test test-cov lint format clean
 
 help:
 	@echo "Open Data Lakehouse commands"
@@ -11,7 +11,8 @@ help:
 	@echo "  make dagster-dev Run Dagster locally with uv"
 	@echo "  make ingest      Materialize every dynamically generated ingestion asset"
 	@echo "  make dbt-build   Build dbt staging, Gold and semantic models"
-	@echo "  make mf-query    Query the prix_moyen_m2 MetricFlow metric"
+	@echo "  make dbt-lint    Lint the dbt SQL models with the dbt v2 native linter"
+	@echo "  make dbt-format  Rewrite the dbt SQL models to the linted style"
 	@echo "  make test        Run the pytest + pytest-mock suite"
 
 up:
@@ -44,12 +45,11 @@ dbt-parse:
 dbt-build:
 	$(COMPOSE) exec dagster-webserver dbt build --project-dir /app/dbt_lakehouse --profiles-dir /app/dbt_lakehouse
 
-mf-query:
-	$(COMPOSE) exec -w /app/dbt_lakehouse dagster-webserver mf query \
-		--metrics prix_moyen_m2 \
-		--group-by commune_code \
-		--order -prix_moyen_m2 \
-		--limit 20
+dbt-lint:
+	$(COMPOSE) exec dagster-webserver dbt lint --project-dir /app/dbt_lakehouse --profiles-dir /app/dbt_lakehouse
+
+dbt-format:
+	$(COMPOSE) exec dagster-webserver dbt format --project-dir /app/dbt_lakehouse --profiles-dir /app/dbt_lakehouse
 
 test:
 	$(UV) run pytest

@@ -1,10 +1,10 @@
 {{ config(materialized='table', schema='gold', file_format='delta', tags=['semantic']) }}
 
-select
+SELECT
     explode(
         sequence(
             to_date('2020-01-01'),
             to_date('2035-12-31'),
-            interval 1 day
+            INTERVAL 1 DAY
         )
-    ) as date_day
+    ) AS DATE_DAY

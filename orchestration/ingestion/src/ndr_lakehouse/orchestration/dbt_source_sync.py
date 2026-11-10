@@ -38,24 +38,27 @@ def build_sources_document(configs: Iterable[AssetConfig]) -> dict[str, Any]:
 
     sources: list[dict[str, Any]] = []
     for (catalog_name, schema_name), items in sorted(grouped.items()):
-        source_name = (
-            schema_name if schema_counts[schema_name] == 1 else f"{catalog_name}_{schema_name}"
-        )
+        source_name = schema_name if schema_counts[schema_name] == 1 else f"{catalog_name}_{schema_name}"
         tables = []
         for config in sorted(items, key=lambda item: item.catalog_properties.table_name):
             catalog = config.catalog_properties
             tables.append(
                 {
                     "name": catalog.table_name,
-                    "description": config.description
-                    or f"Bronze Iceberg table {catalog.full_table_name}",
-                    "meta": {
-                        "dagster": {
-                            "asset_key": [
-                                catalog.catalog_name,
-                                catalog.schema_name,
-                                catalog.table_name,
-                            ]
+                    "description": config.description or f"Bronze Iceberg table {catalog.full_table_name}",
+                    # dbt v2 rejects a bare ``meta:`` key on a source table
+                    # (UnusedConfigKey, which is an *error*) and only accepts it
+                    # under ``config:``. Both spellings land in
+                    # ``manifest.sources[uid].meta``, but only this one parses.
+                    "config": {
+                        "meta": {
+                            "dagster": {
+                                "asset_key": [
+                                    catalog.catalog_name,
+                                    catalog.schema_name,
+                                    catalog.table_name,
+                                ]
+                            }
                         }
                     },
                 }

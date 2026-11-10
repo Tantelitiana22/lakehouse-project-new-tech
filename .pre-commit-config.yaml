@@ -3,9 +3,9 @@
 # Install once with `pre-commit install`, then hooks run on `git commit`.
 # Run the whole suite against every file with `pre-commit run --all-files`.
 #
-# Line length is 100 everywhere: that is what `pyproject.toml` already sets for
-# ruff, and it is the longest line the code actually has. black, isort and
-# flake8 are all pinned to the same value so they cannot fight each other.
+# Line length is 120 everywhere: black, isort, flake8, pylint, ruff and the
+# SQLFluff settings read by `dbt lint` are all pinned to the same value so they
+# cannot fight each other.
 default_language_version:
   python: python3.12
 
@@ -21,7 +21,7 @@ repos:
     rev: 25.1.0
     hooks:
       - id: black
-        args: [--line-length=100]
+        args: [--line-length=120]
 
   - repo: https://github.com/PyCQA/flake8
     rev: 7.2.0
@@ -65,23 +65,42 @@ repos:
           - --ignore-paths=^orchestration/ingestion/tests/
         exclude: ^orchestration/ingestion/tests/
 
-  - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 3.4.1
+  # dbt v2 ships its own SQL linter (`dbt lint`) and formatter (`dbt format`),
+  # both driven by the SQLFluff rules and the `.sqlfluff` file at the repo root.
+  # They replace the standalone sqlfluff 3.x hooks, which could not template
+  # `ref()`/`source()` without the Jinja templater and were an order of
+  # magnitude slower.
+  #
+  # Both hooks are `language: system` because dbt is an optional extra of this
+  # project (`uv sync --extra dbt`), not a tool pre-commit can install in its
+  # own isolated environment: the binary needs the project's profiles.yml.
+  #
+  # `env DBT_ALLOW_EXPERIMENTAL_ADAPTERS=true` is not decoration: the Spark
+  # adapter is compiled into the dbt v2 binary but still gated, and without the
+  # variable every command fails with `dbt1005` before parsing anything.
+  - repo: local
     hooks:
-      # `fix` must come first: pre-commit stops at the first failing hook, so
-      # running `lint` first would block the fixer from ever correcting the
-      # layout issues it exists for.
-      - id: sqlfluff-fix
-        # --force is not needed: fixing without confirmation is the default
-        # behaviour in sqlfluff 3.x.
+      - id: dbt-format
+        name: dbt format (check)
+        language: system
+        entry: env DBT_ALLOW_EXPERIMENTAL_ADAPTERS=true dbt format --check
         args:
-          - --dialect=sparksql
-          - --config=.sqlfluff
-          - --rules=AL01,AL02,LT01,LT02,LT05,CP02,ST06
+          - --project-dir=dbt_lakehouse
+          - --profiles-dir=dbt_lakehouse
         files: ^dbt_lakehouse/.*\.sql$
-      - id: sqlfluff-lint
-        # The dbt project targets Spark (see dbt_lakehouse/profiles.yml), so
-        # `trino` is the wrong flavour: it cannot parse the files at all and
-        # emits PRS errors on valid Spark SQL.
-        args: [--dialect=sparksql, --config=.sqlfluff]
+        pass_filenames: false
+        require_serial: true
+
+      - id: dbt-lint
+        name: dbt lint
+        language: system
+        # `dbt lint --fix` always exits 0, so it cannot gate a commit on its
+        # own. Run the plain linter: it exits 1 when a violation remains, and
+        # the violations it reports are all auto-fixable by `dbt lint --fix`.
+        entry: env DBT_ALLOW_EXPERIMENTAL_ADAPTERS=true dbt lint
+        args:
+          - --project-dir=dbt_lakehouse
+          - --profiles-dir=dbt_lakehouse
         files: ^dbt_lakehouse/.*\.sql$
+        pass_filenames: false
+        require_serial: true

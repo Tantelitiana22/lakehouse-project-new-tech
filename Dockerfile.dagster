@@ -8,7 +8,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl git default-jre-headless build-essential \
+    ca-certificates curl git default-jre-headless build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir "uv>=0.4"
@@ -29,19 +29,25 @@ ARG MAVEN_BASE=https://repo1.maven.org/maven2
 RUN set -eux; \
     mkdir -p /opt/spark-jars; \
     curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.6.1/iceberg-spark-runtime-3.5_2.12-1.6.1.jar" \
-        -o /opt/spark-jars/iceberg-spark-runtime-3.5_2.12-1.6.1.jar; \
+    -o /opt/spark-jars/iceberg-spark-runtime-3.5_2.12-1.6.1.jar; \
     curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-aws-bundle/1.6.1/iceberg-aws-bundle-1.6.1.jar" \
-        -o /opt/spark-jars/iceberg-aws-bundle-1.6.1.jar; \
+    -o /opt/spark-jars/iceberg-aws-bundle-1.6.1.jar; \
     curl -fL "${MAVEN_BASE}/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar" \
-        -o /opt/spark-jars/hadoop-aws-3.3.4.jar; \
+    -o /opt/spark-jars/hadoop-aws-3.3.4.jar; \
     curl -fL "${MAVEN_BASE}/com/amazonaws/aws-java-sdk-bundle/1.12.367/aws-java-sdk-bundle-1.12.367.jar" \
-        -o /opt/spark-jars/aws-java-sdk-bundle-1.12.367.jar; \
+    -o /opt/spark-jars/aws-java-sdk-bundle-1.12.367.jar; \
     curl -fL "${MAVEN_BASE}/io/delta/delta-spark_2.12/3.2.0/delta-spark_2.12-3.2.0.jar" \
-        -o /opt/spark-jars/delta-spark_2.12-3.2.0.jar; \
+    -o /opt/spark-jars/delta-spark_2.12-3.2.0.jar; \
     curl -fL "${MAVEN_BASE}/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar" \
-        -o /opt/spark-jars/delta-storage-3.2.0.jar
+    -o /opt/spark-jars/delta-storage-3.2.0.jar
 
 RUN uv sync --frozen --extra spark --extra dbt --extra postgres --no-dev
+
+# dbt v2 compiles the Spark adapter into its own binary but still gates it
+# behind this variable: without it every command aborts with `dbt1005` before
+# parsing anything, which would break both this build step and `make dbt-*`.
+ENV DBT_ALLOW_EXPERIMENTAL_ADAPTERS=true \
+    DBT_SEND_ANONYMOUS_USAGE_STATS=false
 
 RUN cd /app/dbt_lakehouse \
     && DBT_PROFILES_DIR=/app/dbt_lakehouse /app/.venv/bin/dbt parse

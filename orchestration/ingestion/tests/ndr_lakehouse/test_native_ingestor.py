@@ -60,10 +60,7 @@ def _keys(mock_s3):
 
 
 def test_parse_link_header_rfc5988():
-    header = (
-        '<https://api.test/records?page=2>; rel="next", '
-        '<https://api.test/records?page=9>; rel="last"'
-    )
+    header = '<https://api.test/records?page=2>; rel="next", ' '<https://api.test/records?page=9>; rel="last"'
     assert parse_link_header(header) == "https://api.test/records?page=2"
     assert parse_link_header(None) is None
     assert parse_link_header('<https://api.test/records?page=1>; rel="prev"') is None
@@ -143,9 +140,7 @@ def test_cursor_pagination_follows_next_cursor(mocker, mock_s3, asset_payload_fa
     ]
 
 
-def test_link_header_pagination_follows_next_link(
-    mocker, mock_s3, asset_payload_factory, ingest_date
-):
+def test_link_header_pagination_follows_next_link(mocker, mock_s3, asset_payload_factory, ingest_date):
     config = _config(
         asset_payload_factory,
         {"strategy": "link_header", "records_json_path": "records"},
@@ -225,9 +220,7 @@ def test_pagination_stops_at_max_pages(mocker, mock_s3, asset_payload_factory, i
     assert len(_keys(mock_s3)) == 2
 
 
-def test_single_stream_preserves_native_csv_gz_bytes(
-    mocker, mock_s3, asset_payload_factory, ingest_date
-):
+def test_single_stream_preserves_native_csv_gz_bytes(mocker, mock_s3, asset_payload_factory, ingest_date):
     payload = asset_payload_factory(
         source_overrides={
             "url": "https://api.example.test/data.csv.gz",
@@ -259,9 +252,7 @@ def test_single_stream_preserves_native_csv_gz_bytes(
     assert call["ContentType"] == "application/gzip"
 
 
-def test_s3_source_is_copied_without_content_transformation(
-    mock_s3, asset_payload_factory, ingest_date
-):
+def test_s3_source_is_copied_without_content_transformation(mock_s3, asset_payload_factory, ingest_date):
     payload = asset_payload_factory(
         source_overrides={
             "type": "s3",
@@ -283,9 +274,7 @@ def test_s3_source_is_copied_without_content_transformation(
     )
 
 
-def test_next_url_pagination_follows_payload_link(
-    mocker, mock_s3, asset_payload_factory, ingest_date
-):
+def test_next_url_pagination_follows_payload_link(mocker, mock_s3, asset_payload_factory, ingest_date):
     config = _config(
         asset_payload_factory,
         {

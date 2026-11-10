@@ -46,9 +46,7 @@ def build_definitions(
             # Repo-relative so the generated header is stable across checkouts,
             # but keep the ``use_case/`` prefix so the label still says where the
             # YAML lives.
-            asset_label = DEFAULT_USE_CASE_ROOT.name / config.assets_path.relative_to(
-                DEFAULT_USE_CASE_ROOT
-            )
+            asset_label = DEFAULT_USE_CASE_ROOT.name / config.assets_path.relative_to(DEFAULT_USE_CASE_ROOT)
         except ValueError:
             asset_label = config.assets_path
         try:
@@ -72,6 +70,7 @@ def build_definitions(
         dbt_assets = build_dbt_assets(
             manifest_path=config.dbt_manifest_path,
             project_dir=config.dbt_project_path,
+            model_names=config.gold_models,
         )
         if dbt_assets:
             assets = [

@@ -58,9 +58,7 @@ class NullHandler:
 
         return None
 
-    def load(
-        self, context: HandlerContext, config: AssetConfig, landing_uri: str
-    ) -> dict[str, Any] | None:
+    def load(self, context: HandlerContext, config: AssetConfig, landing_uri: str) -> dict[str, Any] | None:
         """Return ``None`` to let the default loading flow run."""
 
         return None

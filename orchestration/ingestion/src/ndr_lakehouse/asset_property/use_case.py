@@ -109,8 +109,7 @@ def _load_manifests(root: str | Path) -> list[tuple[Path, UseCaseConfig]]:
     if not directory.is_dir():
         raise FileNotFoundError(f"use-case root directory not found: {directory}")
     manifests = [
-        (manifest, load_use_case_config(manifest))
-        for manifest in sorted(directory.glob(_DEFAULT_MANIFEST_GLOB))
+        (manifest, load_use_case_config(manifest)) for manifest in sorted(directory.glob(_DEFAULT_MANIFEST_GLOB))
     ]
     return sorted(manifests, key=lambda item: item[1].name)
 
@@ -136,7 +135,5 @@ def resolve_use_case(root: str | Path, name: str | None = None) -> UseCaseConfig
         paths = " and ".join(str(manifest) for manifest, _ in defaults)
         raise AmbiguousDefaultUseCaseError(f"multiple default use cases: {paths}")
     if not defaults:
-        raise UseCaseNotFoundError(
-            f"no default use case under {Path(root)}; available: {available}"
-        )
+        raise UseCaseNotFoundError(f"no default use case under {Path(root)}; available: {available}")
     return defaults[0][1]

@@ -291,9 +291,7 @@ class CatalogProperties(_StrictModel):
     @classmethod
     def _validate_identifier(cls, value: str) -> str:
         if not _IDENTIFIER_RE.fullmatch(value):
-            raise ValueError(
-                f"invalid Unity Catalog identifier {value!r}; expected [A-Za-z_][A-Za-z0-9_]*"
-            )
+            raise ValueError(f"invalid Unity Catalog identifier {value!r}; expected [A-Za-z_][A-Za-z0-9_]*")
         return value
 
     @field_validator("primary_keys", "partition_by")
@@ -427,9 +425,7 @@ def discover_asset_configs(asset_dir: str | Path, *, recursive: bool = False) ->
             continue
         for config in load_asset_config_file(path):
             if config.name in seen:
-                raise DuplicateAssetNameError(
-                    f"duplicate asset name {config.name!r} in {seen[config.name]} and {path}"
-                )
+                raise DuplicateAssetNameError(f"duplicate asset name {config.name!r} in {seen[config.name]} and {path}")
             seen[config.name] = path
             configs.append(config)
     return configs

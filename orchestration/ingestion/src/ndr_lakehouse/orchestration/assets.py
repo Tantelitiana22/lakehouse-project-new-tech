@@ -65,8 +65,7 @@ class _UnboundPort:
 
     def _fail(self, *args: Any, **kwargs: Any) -> Any:
         raise RuntimeError(
-            f"the {self._name} port is unbound on an asset without a handler; "
-            "set 'handler:' if the asset needs it"
+            f"the {self._name} port is unbound on an asset without a handler; " "set 'handler:' if the asset needs it"
         )
 
     ingest = _fail
@@ -215,11 +214,7 @@ def _load(
     """Run one Iceberg materialisation for any handler variant."""
 
     ctx = HandlerContext(
-        landing=(
-            _LandingAdapter(native_ingestor)
-            if native_ingestor is not None
-            else _UnboundPort("landing")
-        ),
+        landing=(_LandingAdapter(native_ingestor) if native_ingestor is not None else _UnboundPort("landing")),
         iceberg=_IcebergAdapter(spark_iceberg),
         settings=settings,
     )
