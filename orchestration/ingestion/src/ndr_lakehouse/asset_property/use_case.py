@@ -41,6 +41,7 @@ class UseCaseConfig(_StrictModel):
     dbt_sources_path: Path
     gold_models: list[str]
     semantic_metric: str
+    schedule_file: Path = Path("schedule.yaml")
     default: bool = False
 
     _base_dir: Path = PrivateAttr(default_factory=Path.cwd)
@@ -78,6 +79,11 @@ class UseCaseConfig(_StrictModel):
     def dbt_manifest_path(self) -> Path:
         """Absolute path of the compiled dbt manifest."""
         return (self.dbt_project_path / "target" / "manifest.json").resolve()
+
+    @property
+    def schedule_path(self) -> Path:
+        """Absolute path of the schedule YAML, next to the manifest by default."""
+        return (self._base_dir / self.schedule_file).resolve()
 
 
 def _read_manifest(manifest: Path) -> dict[str, Any]:

@@ -73,3 +73,19 @@ def test_discover_returns_every_manifest_sorted(tmp_path, write_use_case):
     write_use_case("beta")
     write_use_case("alpha")
     assert [c.name for c in discover_use_case_configs(tmp_path)] == ["alpha", "beta"]
+
+
+def test_schedule_path_defaults_to_schedule_yaml_next_to_the_manifest(tmp_path, write_use_case):
+    manifest = write_use_case("demo")
+    config = load_use_case_config(manifest)
+    assert config.schedule_path == (tmp_path / "demo" / "schedule.yaml").resolve()
+
+
+def test_schedule_file_is_manifest_relative(tmp_path, write_use_case):
+    manifest = write_use_case("demo")
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + "  schedule_file: configs/cron.yaml\n",
+        encoding="utf-8",
+    )
+    config = load_use_case_config(manifest)
+    assert config.schedule_path == (tmp_path / "demo" / "configs" / "cron.yaml").resolve()
