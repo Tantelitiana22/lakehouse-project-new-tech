@@ -1,5 +1,7 @@
 # NDR Open Data Lakehouse
 
+[![CI](https://github.com/Tantelitiana22/lakehouse-project/actions/workflows/ci.yml/badge.svg)](https://github.com/Tantelitiana22/lakehouse-project/actions/workflows/ci.yml)
+
 A 100% metadata-driven, asset-orchestrated Open Data Lakehouse. Ingestion,
 landing-zone storage, Unity Catalog namespaces, Iceberg write behaviour and
 Dagster assets are all generated from declarative YAML.
@@ -272,14 +274,17 @@ SQLite instance under `.dagster/`.
 ## Tests
 
 ```bash
-uv sync
+uv sync --extra spark      # the suite imports delta.tables at module level
 uv run pytest
 ```
 
 The suite uses `pytest`, `pytest-mock` (`mocker`) and `pytest-cov`. `httpx`,
 `boto3` and Spark APIs are mocked, so **no network, Docker, RustFS, Unity
-Catalog or Spark runtime is required**. Test paths, imports and the coverage
-gate are enforced in `pyproject.toml`:
+Catalog or Spark cluster is required**. `pyspark` itself must still be
+importable: `ndr_lakehouse.iceberg` imports `delta.tables` at module scope, so a
+bare `uv sync` (without `--extra spark`) fails at collection time with
+`ModuleNotFoundError: No module named 'delta'`. Test paths, imports and the
+coverage gate are enforced in `pyproject.toml`:
 
 ```toml
 [tool.pytest.ini_options]
@@ -295,24 +300,64 @@ addopts = [
 `uv run pytest` fails if total coverage drops below **80%** (branch coverage is
 enabled).
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs three independent jobs on every push to `main`
+and every pull request:
+
+| Job | What it runs |
+| --- | --- |
+| **Python quality** | `isort`, `black`, `flake8`, `ruff`, `mypy`, `pylint` |
+| **SQL quality** | `dbt parse`, `dbt format --check`, `dbt lint` |
+| **Unit tests** | `pytest` (with the coverage gate) and `dagster definitions validate`, on Python 3.11 **and** 3.12 |
+
+`make check` runs the same sequence locally, so a red build should never be a
+surprise:
+
+```bash
+uv sync --extra spark --extra dbt
+make check
+```
+
+Three details explain the shape of the workflow:
+
+* **The jobs are split, not merged.** A SQL lint error must not hide a test
+  regression, and the tests job pays a 455 MB `pyspark` sdist download — there is
+  no wheel for 4.1.1 — which should not delay the cheap static checks.
+* **`ruff format` is not part of CI.** `ruff check` runs (it adds the
+  pyupgrade and bugbear rule sets that isort/black/flake8 lack), but
+  `ruff format` disagrees with `black` on a few string-concatenation lines, and
+  two formatters demanding different output is worse than either alone. Only
+  `black` decides formatting.
+* **`dbt lint --fix` is never run.** It exits 0 unconditionally, so it cannot
+  gate anything; plain `dbt lint` exits 1 on remaining violations. Use
+  `make dbt-format` to fix locally.
+
+The tools in the `lint` dependency group are pinned to the exact `rev:` values in
+`.pre-commit-config.yaml`. They are installed into the project venv because
+pre-commit builds each hook in its own throwaway environment, which is why
+`uv run isort` used to fail with *Failed to spawn* — nothing ever landed in
+`.venv`. Bump both files together.
+
 ## Pre-commit hooks
 
 Linting and formatting run through [pre-commit](https://pre-commit.com). Install
 the git hook once per clone:
 
 ```bash
-uv sync --group dev
+uv sync --extra spark --extra dbt
 uv run pre-commit install          # on every `git commit`
 uv run pre-commit run --all-files  # to check the whole tree on demand
 ```
 
-Seven hooks are configured in `.pre-commit-config.yaml`:
+Eight hooks are configured in `.pre-commit-config.yaml`:
 
 | Hook | Config | Scope |
 | --- | --- | --- |
 | `isort` | `[tool.isort]` in `pyproject.toml` | import order (black profile) |
 | `black` | `--line-length=120` | Python formatting |
 | `flake8` | `.flake8` | pyflakes/pycodestyle |
+| `ruff` | `[tool.ruff]` in `pyproject.toml` | pyupgrade + bugbear + import order |
 | `mypy` | `[tool.mypy]` in `pyproject.toml` | type checking |
 | `pylint` | `.pylintrc` | design and code smells |
 | `dbt format (check)` | `.sqlfluff`-ported rules | SQL layout, via `dbt format --check` |
@@ -322,6 +367,11 @@ A few project-specific details are easy to get wrong:
 
 * The line length is **120** everywhere — `pyproject.toml`, `.flake8`, `.pylintrc`
   and `.sqlfluff` all agree, so the tools cannot fight each other.
+* `ruff` and `isort` both order imports, so `[tool.ruff.lint.isort]` repeats
+  isort's `known_first_party` list. Neither tool can discover the first-party
+  packages on its own: the importable root is `orchestration/ingestion/src`, not
+  `orchestration/`, so `ndr_lakehouse` looks third-party from the repo root and
+  the two tools would otherwise emit contradictory orderings.
 * SQL is linted by **dbt's own linter** (dbt v2), not by `sqlfluff`. The rules were
   ported from the previous `.sqlfluff` file — `capitalisation.keywords = upper`,
   `capitalisation.identifiers = upper` (all), `aliasing.table/column = explicit`,

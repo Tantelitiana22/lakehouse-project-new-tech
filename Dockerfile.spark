@@ -25,19 +25,19 @@ ARG MAVEN_BASE=https://repo1.maven.org/maven2
 # (ClassNotFoundException: org.apache.spark.sql.delta.icebergShaded.IcebergConverter).
 RUN set -eux; \
     curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar" \
-        -o /opt/spark/jars/iceberg-spark-runtime-4.1_2.13-1.12.0.jar; \
+    -o /opt/spark/jars/iceberg-spark-runtime-4.1_2.13-1.12.0.jar; \
     curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar" \
-        -o /opt/spark/jars/iceberg-aws-bundle-1.12.0.jar; \
+    -o /opt/spark/jars/iceberg-aws-bundle-1.12.0.jar; \
     curl -fL "${MAVEN_BASE}/org/apache/hadoop/hadoop-aws/3.4.2/hadoop-aws-3.4.2.jar" \
-        -o /opt/spark/jars/hadoop-aws-3.4.2.jar; \
+    -o /opt/spark/jars/hadoop-aws-3.4.2.jar; \
     curl -fL "${MAVEN_BASE}/com/amazonaws/aws-java-sdk-bundle/1.12.720/aws-java-sdk-bundle-1.12.720.jar" \
-        -o /opt/spark/jars/aws-java-sdk-bundle-1.12.720.jar; \
+    -o /opt/spark/jars/aws-java-sdk-bundle-1.12.720.jar; \
     curl -fL "${MAVEN_BASE}/io/delta/delta-spark_2.13/4.3.1/delta-spark_2.13-4.3.1.jar" \
-        -o /opt/spark/jars/delta-spark_2.13-4.3.1.jar; \
+    -o /opt/spark/jars/delta-spark_2.13-4.3.1.jar; \
     curl -fL "${MAVEN_BASE}/io/delta/delta-storage/4.3.1/delta-storage-4.3.1.jar" \
-        -o /opt/spark/jars/delta-storage-4.3.1.jar; \
+    -o /opt/spark/jars/delta-storage-4.3.1.jar; \
     curl -fL "${MAVEN_BASE}/io/delta/delta-iceberg_2.13/4.3.1/delta-iceberg_2.13-4.3.1.jar" \
-        -o /opt/spark/jars/delta-iceberg_2.13-4.3.1.jar
+    -o /opt/spark/jars/delta-iceberg_2.13-4.3.1.jar
 
 
 USER spark
