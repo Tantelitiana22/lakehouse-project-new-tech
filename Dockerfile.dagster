@@ -26,20 +26,26 @@ COPY workspace.yaml ./
 # into the volume instead.
 
 ARG MAVEN_BASE=https://repo1.maven.org/maven2
+# These must stay in lockstep with ``Dockerfile.spark``. The Dagster container
+# creates its own local SparkSession (``iceberg/session.py``) to write Delta
+# tables, so it needs the same Iceberg/Delta/Hadoop trio as the Thrift server;
+# a mismatch shows up as a NoSuchMethodError buried in a Spark stack trace.
 RUN set -eux; \
     mkdir -p /opt/spark-jars; \
-    curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.6.1/iceberg-spark-runtime-3.5_2.12-1.6.1.jar" \
-    -o /opt/spark-jars/iceberg-spark-runtime-3.5_2.12-1.6.1.jar; \
-    curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-aws-bundle/1.6.1/iceberg-aws-bundle-1.6.1.jar" \
-    -o /opt/spark-jars/iceberg-aws-bundle-1.6.1.jar; \
-    curl -fL "${MAVEN_BASE}/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar" \
-    -o /opt/spark-jars/hadoop-aws-3.3.4.jar; \
-    curl -fL "${MAVEN_BASE}/com/amazonaws/aws-java-sdk-bundle/1.12.367/aws-java-sdk-bundle-1.12.367.jar" \
-    -o /opt/spark-jars/aws-java-sdk-bundle-1.12.367.jar; \
-    curl -fL "${MAVEN_BASE}/io/delta/delta-spark_2.12/3.2.0/delta-spark_2.12-3.2.0.jar" \
-    -o /opt/spark-jars/delta-spark_2.12-3.2.0.jar; \
-    curl -fL "${MAVEN_BASE}/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar" \
-    -o /opt/spark-jars/delta-storage-3.2.0.jar
+    curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar" \
+    -o /opt/spark-jars/iceberg-spark-runtime-4.1_2.13-1.12.0.jar; \
+    curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar" \
+    -o /opt/spark-jars/iceberg-aws-bundle-1.12.0.jar; \
+    curl -fL "${MAVEN_BASE}/org/apache/hadoop/hadoop-aws/3.4.2/hadoop-aws-3.4.2.jar" \
+    -o /opt/spark-jars/hadoop-aws-3.4.2.jar; \
+    curl -fL "${MAVEN_BASE}/com/amazonaws/aws-java-sdk-bundle/1.12.720/aws-java-sdk-bundle-1.12.720.jar" \
+    -o /opt/spark-jars/aws-java-sdk-bundle-1.12.720.jar; \
+    curl -fL "${MAVEN_BASE}/io/delta/delta-spark_2.13/4.3.1/delta-spark_2.13-4.3.1.jar" \
+    -o /opt/spark-jars/delta-spark_2.13-4.3.1.jar; \
+    curl -fL "${MAVEN_BASE}/io/delta/delta-storage/4.3.1/delta-storage-4.3.1.jar" \
+    -o /opt/spark-jars/delta-storage-4.3.1.jar; \
+    curl -fL "${MAVEN_BASE}/io/delta/delta-iceberg_2.13/4.3.1/delta-iceberg_2.13-4.3.1.jar" \
+    -o /opt/spark-jars/delta-iceberg_2.13-4.3.1.jar
 
 RUN uv sync --frozen --extra spark --extra dbt --extra postgres --no-dev
 

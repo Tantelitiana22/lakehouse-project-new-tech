@@ -60,6 +60,41 @@ High-level use cases (`LandingIngestionService`, `IcebergLoadService`,
 isolated in adapters, so the business layers can be tested without external
 services.
 
+## The Spark stack is version-locked
+
+Spark, Delta and Iceberg are upgraded together or not at all. The current stack
+is **Spark 4.1.1 / Delta 4.3.1 / Iceberg 1.12.0**, on Scala 2.13 and Java 17.
+
+That ceiling is real, not a preference:
+
+| Component | Constraint |
+|---|---|
+| `delta-spark` 4.3.1 | built against `spark-sql` 4.1.0; requires `pyspark<=4.1.1` |
+| `delta-spark` 4.4.x | raises the ceiling to Spark 4.2 |
+| Iceberg | publishes `iceberg-spark-runtime` for Spark **4.0 and 4.1 only** |
+
+Iceberg is the binding constraint: there is no `iceberg-spark-runtime-4.2_2.13`
+or `-4.3_2.13` artifact. Because this project writes Delta with UniForm (which
+produces the Iceberg metadata in the same commit) *and* reads through the
+Iceberg REST catalog, bumping Spark past 4.1 would break both directions.
+
+Two consequences worth remembering:
+
+* Scala moved from 2.12 to 2.13 in Spark 4, so every Maven artifact suffix
+  changed (`iceberg-spark-runtime-3.5_2.12` → `-4.1_2.13`).
+* `hadoop-aws` is pinned to **3.4.2** to match the Hadoop that Spark 4.1.1
+  bundles. Mixing Hadoop majors is what produces the classic
+  `NoSuchMethodError: S3AFileSystem` at runtime.
+* **UniForm ships in its own artifact**, `delta-iceberg_2.13`. Without it,
+  every `CREATE TABLE` carrying `delta.enableIcebergCompatV2` compiles fine and
+  then fails at runtime with `DELTA_MISSING_ICEBERG_CLASS`
+  (`ClassNotFoundException: org.apache.spark.sql.delta.icebergShaded.IcebergConverter`).
+  It is not pulled in transitively by `delta-spark`.
+
+The jars are downloaded in *two* places — `Dockerfile.spark` (the Thrift server)
+and `Dockerfile.dagster` (the local `SparkSession` Dagster uses to write Delta
+tables). They must stay in lockstep.
+
 ## Repository layout
 
 ```
