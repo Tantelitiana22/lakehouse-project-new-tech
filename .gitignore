@@ -19,6 +19,8 @@ storage/
 dbt_lakehouse/target/
 dbt_lakehouse/logs/
 dbt_lakehouse/dbt_packages/
+# `dagster definitions validate` creates one when DAGSTER_HOME is unset.
+.tmp_dagster_home_*/
 
 # Local env / IDE
 .env

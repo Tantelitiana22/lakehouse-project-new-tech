@@ -1,8 +1,9 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 UV := uv
+PY_SRC := orchestration/ingestion/src orchestration/ingestion/tests use_case
 
-.PHONY: help up down build restart logs ps dagster-dev ingest dbt-build dbt-parse dbt-lint dbt-format test test-cov lint format clean
+.PHONY: help up down build restart logs ps dagster-dev ingest dbt-build dbt-parse dbt-lint dbt-format test test-cov lint format check clean
 
 help:
 	@echo "Open Data Lakehouse commands"
@@ -14,6 +15,8 @@ help:
 	@echo "  make dbt-lint    Lint the dbt SQL models with the dbt v2 native linter"
 	@echo "  make dbt-format  Rewrite the dbt SQL models to the linted style"
 	@echo "  make test        Run the pytest + pytest-mock suite"
+	@echo "  make lint        Run isort, black, flake8, ruff, mypy and pylint"
+	@echo "  make check       Run everything CI runs: Python + SQL + tests"
 
 up:
 	$(COMPOSE) up -d --build
@@ -58,10 +61,27 @@ test-cov:
 	$(UV) run pytest --cov=ndr_lakehouse --cov-report=term-missing
 
 lint:
-	$(UV) run ruff check orchestration/ingestion/src orchestration/ingestion/tests
+	$(UV) run isort --check-only --diff $(PY_SRC)
+	$(UV) run black --check --line-length=120 $(PY_SRC)
+	$(UV) run flake8 --config=.flake8 $(PY_SRC)
+	$(UV) run ruff check $(PY_SRC)
+	$(UV) run mypy --config-file=pyproject.toml $(PY_SRC)
+	$(UV) run pylint --rcfile=.pylintrc orchestration/ingestion/src use_case
 
 format:
-	$(UV) run ruff format orchestration/ingestion/src orchestration/ingestion/tests
+	$(UV) run isort $(PY_SRC)
+	$(UV) run black --line-length=120 $(PY_SRC)
+
+# The exact sequence `.github/workflows/ci.yml` runs, minus the matrix: run it
+# before pushing so a red build is a surprise rather than the expected outcome.
+check: lint test
+	DBT_ALLOW_EXPERIMENTAL_ADAPTERS=true DBT_ENGINE_NO_WARN_SEMANTIC_MANIFEST_VALIDATION=true \
+		$(UV) run dbt parse --project-dir=dbt_lakehouse --profiles-dir=dbt_lakehouse
+	DBT_ALLOW_EXPERIMENTAL_ADAPTERS=true \
+		$(UV) run dbt format --check --project-dir=dbt_lakehouse --profiles-dir=dbt_lakehouse
+	DBT_ALLOW_EXPERIMENTAL_ADAPTERS=true \
+		$(UV) run dbt lint --project-dir=dbt_lakehouse --profiles-dir=dbt_lakehouse
+	$(UV) run dagster definitions validate -w workspace.yaml
 
 clean:
 	$(COMPOSE) down -v --remove-orphans

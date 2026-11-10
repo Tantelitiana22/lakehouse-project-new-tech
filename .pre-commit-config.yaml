@@ -65,6 +65,23 @@ repos:
           - --ignore-paths=^orchestration/ingestion/tests/
         exclude: ^orchestration/ingestion/tests/
 
+  # ruff overlaps black/isort/flake8 on formatting and import order, which is
+  # why it is deliberately configured to only lint (_not_ format) here: `ruff
+  # format` disagrees with black on 4 files, and two formatters fighting over
+  # the same lines is worse than either alone. What ruff adds beyond the hooks
+  # above is the pyupgrade (UP) and bugbear (B) rule sets. Its isort section is
+  # pinned to the same known-first-party list as [tool.isort] so the two cannot
+  # report contradictory import orderings.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      # `ruff-check`, not the bare `ruff` id: the latter is a legacy alias in
+      # ruff-pre-commit and prints "(legacy alias)" on every run.
+      # `--exit-non-zero-on-fix` makes an autofix a failing hook, so a file the
+      # commit would silently rewrite has to be reviewed and re-staged.
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
+
   # dbt v2 ships its own SQL linter (`dbt lint`) and formatter (`dbt format`),
   # both driven by the SQLFluff rules and the `.sqlfluff` file at the repo root.
   # They replace the standalone sqlfluff 3.x hooks, which could not template
