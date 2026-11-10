@@ -1,6 +1,6 @@
 # NDR Open Data Lakehouse
 
-[![CI](https://github.com/Tantelitiana22/lakehouse-project/actions/workflows/ci.yml/badge.svg)](https://github.com/Tantelitiana22/lakehouse-project/actions/workflows/ci.yml)
+[![CI](https://github.com/Tantelitiana22/lakehouse-project-new-tech/actions/workflows/ci.yml/badge.svg)](https://github.com/Tantelitiana22/lakehouse-project-new-tech/actions/workflows/ci.yml)
 
 A 100% metadata-driven, asset-orchestrated Open Data Lakehouse. Ingestion,
 landing-zone storage, Unity Catalog namespaces, Iceberg write behaviour and
