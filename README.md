@@ -304,6 +304,38 @@ with `ModuleNotFoundError: No module named 'psycopg'`.
 `dagster dev` (outside Docker) ignores this file entirely and keeps using a local
 SQLite instance under `.dagster/`.
 
+## Schedules
+
+Automation is declared in `use_case/<use_case>/schedule.yaml` (override the path
+with `schedule_file:` in `use_case.yaml`). Each entry becomes one asset job and
+one Dagster schedule. The shipped example runs daily:
+
+```yaml
+schedules:
+  - name: daily_lakehouse_refresh
+    cron: "0 6 * * *"          # five-field cron: minute hour day month weekday
+    timezone: Europe/Paris
+    enabled: true
+```
+
+`enabled: true` registers the schedule as running; `false` registers it as
+stopped, so it stays visible in **Automation** and can be started from the UI.
+Omit `selection` to materialize every asset in dependency order, or narrow it
+with `selection: {groups: [landing, bronze, dbt, semantic]}` or
+`selection: {assets: [["lakehouse", "bronze", "dvf_mutations_77"]]}`. A
+selection that matches no asset fails at load instead of ticking an empty job.
+
+`./use_case` is bind-mounted into both Dagster containers, so applying an edit
+does not need an image rebuild — only a restart, because both processes load the
+workspace at startup:
+
+```bash
+docker compose restart dagster-webserver dagster-daemon
+```
+
+The `dagster-daemon` service must be running for ticks to fire; it is part of
+`make up`.
+
 ## Tests
 
 ```bash

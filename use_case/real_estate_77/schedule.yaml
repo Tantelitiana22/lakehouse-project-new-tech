@@ -1,0 +1,17 @@
+# ---------------------------------------------------------------------------
+# Automation for the real-estate use case.
+#
+# Edit the cron below, then reload/restart the Dagster processes. With the
+# compose bind mount, no image rebuild is needed. Standard five-field cron:
+#   minute hour day-of-month month day-of-week
+# Set enabled: false to register the schedule as stopped.
+# ---------------------------------------------------------------------------
+schedules:
+  - name: daily_lakehouse_refresh
+    description: Landing -> Bronze -> dbt Gold -> semantic validation
+    cron: "0 6 * * *"          # 06:00 every day
+    timezone: Europe/Paris
+    enabled: true
+    # No `selection` means every asset in dependency order. Narrow it with:
+    # selection:
+    #   groups: [landing, bronze, dbt, semantic]

@@ -220,6 +220,7 @@ services:
       # Makes the webserver and the daemon share one Postgres-backed instance
       # instead of each getting its own SQLite file inside its own DAGSTER_HOME.
       - ./dagster-instance.yaml:/app/.dagster/dagster.yaml:ro
+      - ./use_case:/app/use_case:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -264,6 +265,7 @@ services:
     volumes:
       - dagster-home:/app/.dagster
       - ./dagster-instance.yaml:/app/.dagster/dagster.yaml:ro
+      - ./use_case:/app/use_case:ro
     depends_on:
       postgres:
         condition: service_healthy

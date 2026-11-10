@@ -16,6 +16,11 @@ from ndr_lakehouse.orchestration.dbt_assets import (
 from ndr_lakehouse.orchestration.dbt_source_sync import sync_dbt_sources
 from ndr_lakehouse.orchestration.paths import DEFAULT_USE_CASE_ROOT
 from ndr_lakehouse.orchestration.resources import build_resource_bundle
+from ndr_lakehouse.orchestration.schedules import (
+    build_schedules,
+    load_schedule_specs,
+    validate_schedule_targets,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +42,9 @@ def build_definitions(
     ``sync_sources`` only has an effect when ``register_dbt`` is true: the
     generated ``_sources.yml`` is consumed by dbt, so a dbt-free graph does not
     rewrite the dbt project on disk.
+
+    Cron-triggered asset jobs come from the use case's optional ``schedule.yaml``;
+    a selection that matches no asset fails at load.
     """
 
     config = resolve_use_case(root or DEFAULT_USE_CASE_ROOT, use_case)
@@ -83,4 +91,10 @@ def build_definitions(
                 ),
             ]
 
-    return Definitions(assets=assets, resources=resources)
+    definitions = Definitions(
+        assets=assets,
+        resources=resources,
+        schedules=build_schedules(load_schedule_specs(config)),
+    )
+    validate_schedule_targets(definitions)
+    return definitions
