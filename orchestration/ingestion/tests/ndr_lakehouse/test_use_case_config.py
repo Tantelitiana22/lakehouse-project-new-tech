@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
+from ndr_lakehouse.asset_property.schema_validator import load_asset_config_file
 from ndr_lakehouse.asset_property.use_case import (
     discover_use_case_configs,
     load_use_case_config,
@@ -89,3 +92,11 @@ def test_schedule_file_is_manifest_relative(tmp_path, write_use_case):
     )
     config = load_use_case_config(manifest)
     assert config.schedule_path == (tmp_path / "demo" / "configs" / "cron.yaml").resolve()
+
+
+def test_dvf_lots_batis_77_uses_section_prefixee_endpoint():
+    assets_file = Path(__file__).resolve().parents[4] / "use_case" / "real_estate_77" / "assets" / "dvf_and_geo_77.yaml"
+    configs = {cfg.name: cfg for cfg in load_asset_config_file(assets_file)}
+    lots_batis = configs["dvf_lots_batis_77"]
+    assert lots_batis.source_properties.url == "https://app.dvf.etalab.gouv.fr/api/mutations3/77001/0000A"
+    assert lots_batis.source_properties.pagination.limit_value == 200

@@ -22,17 +22,21 @@ LOTS AS (
     SELECT
         CAST(ID_MUTATION AS string) AS MUTATION_ID,
         CAST(ID_PARCELLE AS string) AS PARCELLE_ID,
-        CAST(DATE_MUTATION AS date) AS MUTATION_DATE,
+        TRY_CAST(nullif(nullif(CAST(DATE_MUTATION AS string), 'nan'), 'None') AS date) AS MUTATION_DATE,
         CAST(NATURE_MUTATION AS string) AS NATURE_MUTATION,
-        CAST(VALEUR_FONCIERE AS double) AS VALEUR_FONCIERE,
-        CAST(SURFACE_REELLE_BATI AS double) AS SURFACE_REELLE_BATI,
-        CAST(SURFACE_TERRAIN AS double) AS SURFACE_TERRAIN,
-        CAST(NOMBRE_PIECES_PRINCIPALES AS int) AS NOMBRE_PIECES_PRINCIPALES,
+        TRY_CAST(nullif(nullif(CAST(VALEUR_FONCIERE AS string), 'nan'), 'None') AS double) AS VALEUR_FONCIERE,
+        TRY_CAST(
+            nullif(nullif(CAST(SURFACE_REELLE_BATI AS string), 'nan'), 'None') AS double
+        ) AS SURFACE_REELLE_BATI,
+        TRY_CAST(nullif(nullif(CAST(SURFACE_TERRAIN AS string), 'nan'), 'None') AS double) AS SURFACE_TERRAIN,
+        CAST(
+            TRY_CAST(nullif(nullif(CAST(NOMBRE_PIECES_PRINCIPALES AS string), 'nan'), 'None') AS double) AS int
+        ) AS NOMBRE_PIECES_PRINCIPALES,
         CAST(CODE_COMMUNE AS string) AS COMMUNE_CODE,
         CAST(NOM_COMMUNE AS string) AS COMMUNE_NAME,
         CAST(CODE_DEPARTEMENT AS string) AS DEPARTMENT_CODE,
-        CAST(LONGITUDE AS double) AS LONGITUDE,
-        CAST(LATITUDE AS double) AS LATITUDE,
+        TRY_CAST(nullif(nullif(CAST(LONGITUDE AS string), 'nan'), 'None') AS double) AS LONGITUDE,
+        TRY_CAST(nullif(nullif(CAST(LATITUDE AS string), 'nan'), 'None') AS double) AS LATITUDE,
         _INGESTED_AT,
         concat(
             CAST(ID_MUTATION AS string),

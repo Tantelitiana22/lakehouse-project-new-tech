@@ -7,6 +7,7 @@ from typing import Any
 
 from ndr_lakehouse.asset_property.schema_validator import AssetConfig
 from ndr_lakehouse.domain.ports import SparkSessionProvider
+from ndr_lakehouse.iceberg.delta_api import ensure_table_registered
 from ndr_lakehouse.iceberg.properties import TablePropertiesSynchronizer
 from ndr_lakehouse.iceberg.reader import NativeDatasetReader
 from ndr_lakehouse.iceberg.schema import SchemaEvolutionService
@@ -77,7 +78,7 @@ class IcebergLoadService:
             dedup_order_by=catalog.dedup_order_by,
         )
 
-        table_existed = bool(spark.catalog.tableExists(full_table_name))
+        table_existed = ensure_table_registered(spark, full_table_name)
         if not table_existed:
             logger.info("Creating Iceberg table %s", full_table_name)
             self.writers.create("overwrite").write(spark, df, catalog)

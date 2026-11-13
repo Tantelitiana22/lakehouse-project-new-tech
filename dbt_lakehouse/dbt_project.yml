@@ -26,11 +26,11 @@ models:
       +file_format: delta
       +tags: ["gold"]
       +post-hook:
-        - "ALTER TABLE {{ this }} SET TBLPROPERTIES ('delta.enableIcebergCompatV2'='true', 'delta.universalFormat.enabledFormats'='iceberg')"
+        - "ALTER TABLE {{ this }} SET TBLPROPERTIES ('delta.columnMapping.mode'='name', 'delta.enableIcebergCompatV2'='true', 'delta.universalFormat.enabledFormats'='iceberg')"
     semantic:
       +materialized: table
       +schema: gold
       +file_format: delta
       +tags: ["semantic"]
       +post-hook:
-        - "ALTER TABLE {{ this }} SET TBLPROPERTIES ('delta.enableIcebergCompatV2'='true', 'delta.universalFormat.enabledFormats'='iceberg')"
+        - "ALTER TABLE {{ this }} SET TBLPROPERTIES ('delta.columnMapping.mode'='name', 'delta.enableIcebergCompatV2'='true', 'delta.universalFormat.enabledFormats'='iceberg')"

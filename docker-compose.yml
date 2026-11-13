@@ -132,6 +132,8 @@ services:
       <<: *aws-env
     ports:
       - "10000:10000"
+    volumes:
+      - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
     depends_on:
       rustfs:
         condition: service_started
@@ -152,7 +154,7 @@ services:
       - --conf
       - spark.hive.server2.thrift.port=10000
       - --conf
-      - spark.sql.warehouse.dir=s3a://lakehouse/warehouse
+      - spark.sql.warehouse.dir=s3://lakehouse/warehouse
       - --conf
       - spark.ui.enabled=true
       - --conf
@@ -220,6 +222,10 @@ services:
       # instead of each getting its own SQLite file inside its own DAGSTER_HOME.
       - ./dagster-instance.yaml:/app/.dagster/dagster.yaml:ro
       - ./use_case:/app/use_case:ro
+      - ./dbt_lakehouse/models:/app/dbt_lakehouse/models:ro
+      - ./dbt_lakehouse/macros:/app/dbt_lakehouse/macros:ro
+      - ./dbt_lakehouse/dbt_project.yml:/app/dbt_lakehouse/dbt_project.yml:ro
+      - ./orchestration/ingestion/src:/app/orchestration/ingestion/src:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -233,9 +239,6 @@ services:
 
   dagster-daemon:
     image: ndr-lakehouse-dagster:local
-    build:
-      context: .
-      dockerfile: Dockerfile.dagster
     hostname: dagster-daemon
     command:
       - dagster-daemon
@@ -265,6 +268,10 @@ services:
       - dagster-home:/app/.dagster
       - ./dagster-instance.yaml:/app/.dagster/dagster.yaml:ro
       - ./use_case:/app/use_case:ro
+      - ./dbt_lakehouse/models:/app/dbt_lakehouse/models:ro
+      - ./dbt_lakehouse/macros:/app/dbt_lakehouse/macros:ro
+      - ./dbt_lakehouse/dbt_project.yml:/app/dbt_lakehouse/dbt_project.yml:ro
+      - ./orchestration/ingestion/src:/app/orchestration/ingestion/src:ro
     depends_on:
       postgres:
         condition: service_healthy

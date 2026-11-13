@@ -21,6 +21,11 @@ from ndr_lakehouse.iceberg import (
     sanitize_column_name,
     sanitize_columns,
 )
+from ndr_lakehouse.iceberg.delta_api import (
+    _DeltaTableBuilderAdapter,
+    ensure_table_registered,
+    table_location,
+)
 from ndr_lakehouse.iceberg.properties import (
     TablePropertiesSynchronizer,
     with_uniform_iceberg_properties,
@@ -41,6 +46,9 @@ def _settings() -> SparkSettings:
 def test_sanitize_column_name_matches_contract():
     assert sanitize_column_name("Code Commune (INSEE)") == "code_commune__insee_"
     assert sanitize_column_name("Valeur foncière") == "valeur_fonci_re"
+    assert sanitize_column_name("codeDepartement") == "code_departement"
+    assert sanitize_column_name("codeRegion") == "code_region"
+    assert sanitize_column_name("codeEpci") == "code_epci"
     assert sanitize_column_name("2024") == "_2024"
     assert sanitize_column_name("") == "_unnamed"
 
@@ -244,10 +252,10 @@ def test_sync_tblproperties_includes_uniform_and_escapes_quotes(mocker):
 
     statement = spark.sql.call_args.args[0]
     assert statement.startswith("ALTER TABLE lakehouse.bronze.demo_table SET TBLPROPERTIES (")
-    assert "format-version='2'" in statement
-    assert "comment='l''été'" in statement
-    assert "delta.enableIcebergCompatV2='true'" in statement
-    assert "delta.universalFormat.enabledFormats='iceberg'" in statement
+    assert "'format-version'='2'" in statement
+    assert "'comment'='l''été'" in statement
+    assert "'delta.enableIcebergCompatV2'='true'" in statement
+    assert "'delta.universalFormat.enabledFormats'='iceberg'" in statement
 
 
 def test_spark_configs_use_delta_uniform_with_iceberg_rest_read_catalog():
@@ -364,3 +372,85 @@ def test_snapshot_inspector_returns_latest_row(mocker):
     spark.sql.return_value.collect.return_value = [row]
 
     assert SnapshotInspector().latest(spark, "lakehouse.bronze.t") == {"snapshot_id": "42"}
+
+
+def test_spark_configs_register_s3_scheme_and_bind_catalog_delegate(mocker):
+    configs = SparkSessionFactory(_settings()).configs("lakehouse")
+    assert configs["spark.hadoop.fs.s3.impl"] == "org.apache.hadoop.fs.s3a.S3AFileSystem"
+
+    spark = mocker.MagicMock(name="spark")
+    catalog_manager = mocker.MagicMock(name="catalog-manager")
+    delegate = mocker.MagicMock(name="v2-session-catalog")
+    catalog_plugin = mocker.MagicMock(name="delta-catalog")
+    spark._jsparkSession.sessionState.return_value.catalogManager.return_value = catalog_manager
+    catalog_manager.catalog.return_value = catalog_plugin
+    catalog_manager.v2SessionCatalog.return_value = delegate
+
+    SparkSessionFactory._bind_catalog_delegate(spark, "lakehouse")
+
+    catalog_manager.catalog.assert_called_once_with("lakehouse")
+    catalog_plugin.setDelegateCatalog.assert_called_once_with(delegate)
+
+
+def test_delta_builder_adapter_strips_catalog_and_creates_namespace(mocker):
+    spark = mocker.MagicMock(name="spark")
+    builder = mocker.MagicMock(name="delta-builder")
+    builder.tableName.return_value = builder
+    builder.addColumns.return_value = builder
+    builder.partitionedBy.return_value = builder
+    builder.property.return_value = builder
+
+    adapter = _DeltaTableBuilderAdapter(spark, builder)
+    (
+        adapter.tableName("lakehouse.bronze.dvf_mutations_77")
+        .addColumns("schema")
+        .partitionedBy("code_commune")
+        .property("format-version", "2")
+        .execute()
+    )
+
+    builder.tableName.assert_called_once_with("bronze.dvf_mutations_77")
+    builder.addColumns.assert_called_once_with("schema")
+    builder.partitionedBy.assert_called_once_with("code_commune")
+    builder.property.assert_called_once_with("format-version", "2")
+    spark.sql.assert_called_once_with("CREATE NAMESPACE IF NOT EXISTS lakehouse.bronze")
+    builder.execute.assert_called_once()
+
+
+def test_table_location_uses_warehouse_dir(mocker):
+    spark = mocker.MagicMock(name="spark")
+    spark.conf.get.return_value = "s3://lakehouse/custom_wh/"
+
+    assert table_location(spark, "lakehouse.bronze.demo_table") == "s3://lakehouse/custom_wh/bronze.db/demo_table"
+    assert table_location(spark, "bronze.demo_table") == "s3://lakehouse/custom_wh/bronze.db/demo_table"
+
+
+def test_ensure_table_registered_registers_existing_delta_location(mocker):
+    spark = mocker.MagicMock(name="spark")
+    spark.catalog.tableExists.return_value = False
+    spark.conf.get.return_value = "s3://lakehouse/warehouse"
+    is_delta = mocker.MagicMock(return_value=True)
+
+    registered = ensure_table_registered(spark, "lakehouse.bronze.demo_table", is_delta_table=is_delta)
+
+    assert registered is True
+    is_delta.assert_called_once_with(spark, "s3://lakehouse/warehouse/bronze.db/demo_table")
+    assert spark.sql.call_args_list == [
+        mocker.call("CREATE NAMESPACE IF NOT EXISTS lakehouse.bronze"),
+        mocker.call(
+            "CREATE TABLE IF NOT EXISTS lakehouse.bronze.demo_table "
+            "USING DELTA LOCATION 's3://lakehouse/warehouse/bronze.db/demo_table'"
+        ),
+    ]
+
+
+def test_ensure_table_registered_returns_false_when_not_delta(mocker):
+    spark = mocker.MagicMock(name="spark")
+    spark.catalog.tableExists.return_value = False
+    spark.conf.get.return_value = "s3://lakehouse/warehouse"
+    is_delta = mocker.MagicMock(return_value=False)
+
+    registered = ensure_table_registered(spark, "lakehouse.bronze.demo_table", is_delta_table=is_delta)
+
+    assert registered is False
+    spark.sql.assert_not_called()

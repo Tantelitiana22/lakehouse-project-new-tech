@@ -108,10 +108,10 @@ assets:
       department: "77"
     source_properties:
       type: http
-      url: https://app.dvf.etalab.gouv.fr/api/mutations3/77001
+      url: https://app.dvf.etalab.gouv.fr/api/mutations3/77001/0000A
       method: GET
       params:
-        limit: "100"
+        limit: "200"
         offset: "0"
       headers:
         Accept: application/json
@@ -125,7 +125,7 @@ assets:
         offset_param: offset
         offset_start: 0
         limit_param: limit
-        limit_value: 100
+        limit_value: 200
         records_json_path: mutations
         max_pages: 50
         rate_limit_sleep_sec: 0.2

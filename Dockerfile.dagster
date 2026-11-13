@@ -15,21 +15,13 @@ RUN pip install --no-cache-dir "uv>=0.4"
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock README.md ./
-COPY orchestration ./orchestration
-COPY dbt_lakehouse ./dbt_lakehouse
-COPY use_case ./use_case
-COPY workspace.yaml ./
-# NOTE: dagster-instance.yaml is intentionally NOT copied. It has to live at
-# $DAGSTER_HOME/dagster.yaml, and the ``dagster-home`` volume would shadow
-# anything baked into /app/.dagster; docker-compose bind-mounts the single file
-# into the volume instead.
-
 ARG MAVEN_BASE=https://repo1.maven.org/maven2
 # These must stay in lockstep with ``Dockerfile.spark``. The Dagster container
 # creates its own local SparkSession (``iceberg/session.py``) to write Delta
 # tables, so it needs the same Iceberg/Delta/Hadoop trio as the Thrift server;
 # a mismatch shows up as a NoSuchMethodError buried in a Spark stack trace.
+# Kept ahead of COPY steps so code/SQL/YAML edits never invalidate the JAR
+# download or uv dependency layers.
 RUN set -eux; \
     mkdir -p /opt/spark-jars; \
     curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar" \
@@ -47,7 +39,26 @@ RUN set -eux; \
     curl -fL "${MAVEN_BASE}/io/delta/delta-iceberg_2.13/4.3.1/delta-iceberg_2.13-4.3.1.jar" \
     -o /opt/spark-jars/delta-iceberg_2.13-4.3.1.jar
 
-RUN uv sync --frozen --extra spark --extra dbt --extra postgres --no-dev
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --extra spark --extra dbt --extra postgres --no-dev --no-install-project
+
+# hadoop-aws 3.4.2 uses AWS SDK v2 S3TransferManager + ApacheHttpClient, which
+# iceberg-aws-bundle (2.54.17) omits. Kept after uv sync so existing heavy
+# download layers remain cached.
+RUN set -eux; \
+    curl -fL "${MAVEN_BASE}/software/amazon/awssdk/s3-transfer-manager/2.54.17/s3-transfer-manager-2.54.17.jar" \
+    -o /opt/spark-jars/s3-transfer-manager-2.54.17.jar; \
+    curl -fL "${MAVEN_BASE}/software/amazon/awssdk/apache-client/2.54.17/apache-client-2.54.17.jar" \
+    -o /opt/spark-jars/apache-client-2.54.17.jar
+
+COPY orchestration ./orchestration
+COPY dbt_lakehouse ./dbt_lakehouse
+COPY use_case ./use_case
+COPY workspace.yaml ./
+# NOTE: dagster-instance.yaml is intentionally NOT copied. It has to live at
+# $DAGSTER_HOME/dagster.yaml, and the ``dagster-home`` volume would shadow
+# anything baked into /app/.dagster; docker-compose bind-mounts the single file
+# into the volume instead.
 
 # dbt v2 compiles the Spark adapter into its own binary but still gates it
 # behind this variable: without it every command aborts with `dbt1005` before
