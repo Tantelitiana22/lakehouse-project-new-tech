@@ -1,48 +1,115 @@
-"""Dagster Definitions assembly for the Open Data Lakehouse."""
+"""Dagster Definitions assembly for one use case."""
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from dagster import Definitions
 
+from ndr_lakehouse.asset_property.use_case import resolve_use_case
 from ndr_lakehouse.orchestration.assets import build_ingestion_assets_from_yaml
 from ndr_lakehouse.orchestration.dbt_assets import (
     build_dbt_assets,
-    metricflow_semantic_validation,
+    build_metricflow_asset,
 )
 from ndr_lakehouse.orchestration.dbt_source_sync import sync_dbt_sources
-from ndr_lakehouse.orchestration.paths import (
-    ASSET_PROPERTY_DIR,
-    DBT_MANIFEST_PATH,
-    DBT_PROJECT_DIR,
-    DBT_SOURCES_PATH,
-)
+from ndr_lakehouse.orchestration.paths import DEFAULT_USE_CASE_ROOT
 from ndr_lakehouse.orchestration.resources import build_resource_bundle
+from ndr_lakehouse.orchestration.schedules import (
+    build_schedules,
+    load_schedule_specs,
+    validate_schedule_targets,
+)
+from ndr_lakehouse.provisioning.resource import UnityCatalogProvisionerResource
 
 logger = logging.getLogger(__name__)
 
 
-def build_definitions() -> Definitions:
-    """Assemble ingestion, dbt and semantic assets into one lineage graph."""
+def build_definitions(
+    use_case: str | Path | None = None,
+    *,
+    register_dbt: bool = True,
+    sync_sources: bool = True,
+    root: Path | None = None,
+) -> Definitions:
+    """Assemble one use case's ingestion, dbt and semantic assets.
 
-    if ASSET_PROPERTY_DIR.exists():
+    The use case is resolved from ``root`` (default: the repository's
+    ``use_case/`` directory) by name, or by the single manifest marked
+    ``default: true``. There is no implicit asset directory: everything the
+    graph needs comes from the manifest.
+
+    ``sync_sources`` only has an effect when ``register_dbt`` is true: the
+    generated ``_sources.yml`` is consumed by dbt, so a dbt-free graph does not
+    rewrite the dbt project on disk.
+
+    Cron-triggered asset jobs come from the use case's optional ``schedule.yaml``;
+    a selection that matches no asset fails at load.
+    """
+
+    config = resolve_use_case(root or DEFAULT_USE_CASE_ROOT, use_case)
+
+    if sync_sources and register_dbt:
+        try:
+            # Repo-relative so the generated header is stable across checkouts,
+            # but keep the ``use_case/`` prefix so the label still says where the
+            # YAML lives.
+            asset_label = DEFAULT_USE_CASE_ROOT.name / config.assets_path.relative_to(DEFAULT_USE_CASE_ROOT)
+        except ValueError:
+            asset_label = config.assets_path
         try:
             sync_dbt_sources(
-                asset_dir=ASSET_PROPERTY_DIR,
-                output_path=DBT_SOURCES_PATH,
+                asset_dir=config.assets_path,
+                output_path=config.dbt_sources_file,
+                source_label=f"{asset_label}/*.yaml",
             )
         except OSError as exc:
             logger.warning("Unable to synchronise dbt sources: %s", exc)
 
-    ingestion_assets = build_ingestion_assets_from_yaml(asset_dir=ASSET_PROPERTY_DIR)
-    dbt_assets = build_dbt_assets(
-        manifest_path=DBT_MANIFEST_PATH,
-        project_dir=DBT_PROJECT_DIR,
+    assets = build_ingestion_assets_from_yaml(asset_dir=config.assets_path, recursive=False)
+    resources = build_resource_bundle(config, register_dbt=register_dbt)
+
+    # The resource bundle is the single source of truth for "dbt is wired": it
+    # already required the project file, the compiled manifest and a usable
+    # ``DbtCliResource``. Deriving the assets from it keeps the bundle and the
+    # graph in agreement, so a half-configured dbt never yields assets whose
+    # upstream resources are missing (or a semantic asset with phantom deps).
+    if "dbt" in resources:
+        provisioner = resources["uc_provisioner"]
+        assert isinstance(provisioner, UnityCatalogProvisionerResource)
+
+        def _register_gold_table(schema_name: str, model_name: str) -> None:
+            provisioner.register_delta_table_from_storage(
+                catalog_name=config.name,
+                schema_name=schema_name,
+                table_name=model_name,
+            )
+
+        dbt_assets = build_dbt_assets(
+            manifest_path=config.dbt_manifest_path,
+            project_dir=config.dbt_project_path,
+            model_names=config.gold_models,
+            catalog_name=config.name,
+            on_model_materialized=_register_gold_table,
+        )
+        if dbt_assets:
+            assets = [
+                *assets,
+                *dbt_assets,
+                build_metricflow_asset(
+                    gold_models=config.gold_models,
+                    dbt_project_dir=config.dbt_project_path,
+                    metric=config.semantic_metric,
+                    catalog_name=config.name,
+                ),
+            ]
+
+    schedule_specs = load_schedule_specs(config)
+    definitions = Definitions(
+        assets=assets,
+        resources=resources,
+        schedules=build_schedules(schedule_specs),
     )
-    assets = [*ingestion_assets, *dbt_assets, metricflow_semantic_validation]
-
-    return Definitions(assets=assets, resources=build_resource_bundle())
-
-
-defs = build_definitions()
+    validate_schedule_targets(definitions, schedule_specs)
+    return definitions

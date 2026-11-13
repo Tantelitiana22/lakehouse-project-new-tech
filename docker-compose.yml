@@ -2,6 +2,10 @@
 # Open Data Lakehouse: RustFS + Unity Catalog OSS + Spark Thrift + Dagster.
 # There is deliberately NO Hive Metastore: all table metadata lives in Unity
 # Catalog OSS and is reached through its Iceberg REST Catalog API.
+#
+# Postgres exists only for Dagster's *own* bookkeeping (run history, event log,
+# schedules/sensors). It is not part of the lakehouse: no table data and no
+# metadata about lakehouse tables is ever stored there.
 # ---------------------------------------------------------------------------
 name: ndr-lakehouse
 
@@ -19,7 +23,8 @@ services:
   rustfs:
     image: rustfs/rustfs:latest
     hostname: rustfs
-    command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    command:
+      ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
     environment:
       RUSTFS_ACCESS_KEY: rustfsadmin
       RUSTFS_SECRET_KEY: rustfssecret
@@ -28,27 +33,42 @@ services:
       RUSTFS_CONSOLE_ADDRESS: ":9001"
     ports:
       - "9000:9000"
-      - "9001:9001"
     volumes:
       - rustfs-data:/data
     restart: unless-stopped
 
+  # One-shot bucket creation. This used to run `minio/mc`, but MinIO pulled its
+  # images from Docker Hub (the repository 404s, and quay.io/minio/* now returns
+  # `unauthorized`), so the image cannot be pulled at all. `amazon/aws-cli` is
+  # the official AWS image, still published, and it speaks plain S3 -- which is
+  # what RustFS exposes -- so `s3 mb` replaces `mc mb --ignore-existing`.
+  #
+  # `s3 mb` is idempotent against RustFS even without `--ignore-existing` (a
+  # second run on an existing bucket still exits 0), so the `|| true` only
+  # guards against a transient error after the service is already up.
   init-buckets:
-    image: minio/mc:latest
+    image: amazon/aws-cli:latest
     depends_on:
       rustfs:
         condition: service_started
     environment:
-      RUSTFS_ACCESS_KEY: rustfsadmin
-      RUSTFS_SECRET_KEY: rustfssecret
+      # aws-cli reads the standard AWS_* names, not RUSTFS_*.
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfssecret
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://rustfs:9000
+      # RustFS is not on EC2; without this the CLI probes the metadata service
+      # on every call and adds seconds of latency before each command.
+      AWS_EC2_METADATA_DISABLED: "true"
+    # The image's ENTRYPOINT is `aws`, so it has to be replaced to get a shell.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        until mc alias set rustfs http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY"; do
+        until aws --endpoint-url "$$AWS_ENDPOINT_URL" s3 ls >/dev/null 2>&1; do
           echo "waiting for RustFS..."; sleep 2;
         done
-        mc mb --ignore-existing rustfs/landing-zone
-        mc mb --ignore-existing rustfs/lakehouse
+        aws --endpoint-url "$$AWS_ENDPOINT_URL" s3 mb s3://landing-zone || true
+        aws --endpoint-url "$$AWS_ENDPOINT_URL" s3 mb s3://lakehouse || true
         echo "RustFS buckets ready: landing-zone, lakehouse"
     restart: "no"
 
@@ -72,6 +92,37 @@ services:
       - unity-catalog-data:/opt/unitycatalog/etc
     restart: unless-stopped
 
+  # Unity Catalog ships no frontend: the server image contains only the API
+  # (api/ bin/ clients/ etc/ server/ target/), and /docs/ is an Armeria API
+  # browser, not a data catalog UI. This service builds the React app from the
+  # upstream `ui/` tree and serves it as static files behind nginx.
+  #
+  # Upstream's own UI image is deliberately NOT used: it runs the CRA *dev*
+  # server with the API host baked into package.json at build time (pointing at
+  # a service literally named `server`), and react-scripts answers "Invalid Host
+  # header" to anything else. See unity-catalog-ui/Dockerfile for the details.
+  #
+  # Host port 3001 because 3000 is already Dagster's webserver.
+  unity-catalog-ui:
+    build:
+      context: ./unity-catalog-ui
+      dockerfile: Dockerfile
+      args:
+        # Keep in step with the `unitycatalog/unitycatalog` tag running above.
+        # The UI talks to /api/2.1/unity-catalog, which is stable across the
+        # 0.x releases, but matching versions avoids surprises.
+        UC_UI_VERSION: v0.7.0
+    hostname: unity-catalog-ui
+    environment:
+      # Substituted into nginx.conf at startup, so the API target is a runtime
+      # concern and the same image works against any UC endpoint.
+      UC_SERVER: http://unity-catalog:8080
+      NGINX_PORT: "3000"
+    depends_on:
+      unity-catalog:
+        condition: service_started
+    restart: unless-stopped
+
   spark-thrift:
     build:
       context: .
@@ -81,6 +132,8 @@ services:
       <<: *aws-env
     ports:
       - "10000:10000"
+    volumes:
+      - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
     depends_on:
       rustfs:
         condition: service_started
@@ -101,7 +154,31 @@ services:
       - --conf
       - spark.hive.server2.thrift.port=10000
       - --conf
-      - spark.sql.warehouse.dir=s3a://lakehouse/warehouse
+      - spark.sql.warehouse.dir=s3://lakehouse/warehouse
+      - --conf
+      - spark.ui.enabled=true
+      - --conf
+      - spark.ui.port=4040
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    hostname: postgres
+    environment:
+      POSTGRES_USER: dagster
+      POSTGRES_PASSWORD: dagster
+      POSTGRES_DB: dagster
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # Dagster cannot create its tables until Postgres accepts connections, so
+      # the Dagster services wait on this rather than on "container started".
+      test: ["CMD-SHELL", "pg_isready -U dagster -d dagster"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   dagster-webserver:
@@ -125,12 +202,33 @@ services:
       LANDING_BUCKET: landing-zone
       DAGSTER_HOME: /app/.dagster
       DBT_PROFILES_DIR: /app/dbt_lakehouse
-      PYTHONPATH: /app/orchestration/ingestion/src
-    ports:
-      - "3000:3000"
+      # dbt v2 ships the Spark adapter inside its binary but keeps it gated;
+      # without this every `dbt` invocation fails with `dbt1005`. It matches the
+      # ENV of the image so `docker compose exec` inherits the same behaviour.
+      DBT_ALLOW_EXPERIMENTAL_ADAPTERS: "true"
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+      # Must match the image's ENV PYTHONPATH: compose wins, so editing only the
+      # Dockerfile would leave this override in place.
+      PYTHONPATH: /app/orchestration/ingestion/src:/app
+      # Read by dagster-instance.yaml; keep in sync with the postgres service.
+      DAGSTER_PG_HOSTNAME: postgres
+      DAGSTER_PG_PORT: "5432"
+      DAGSTER_PG_USERNAME: dagster
+      DAGSTER_PG_PASSWORD: dagster
+      DAGSTER_PG_DB: dagster
     volumes:
       - dagster-home:/app/.dagster
+      # Makes the webserver and the daemon share one Postgres-backed instance
+      # instead of each getting its own SQLite file inside its own DAGSTER_HOME.
+      - ./dagster-instance.yaml:/app/.dagster/dagster.yaml:ro
+      - ./use_case:/app/use_case:ro
+      - ./dbt_lakehouse/models:/app/dbt_lakehouse/models:ro
+      - ./dbt_lakehouse/macros:/app/dbt_lakehouse/macros:ro
+      - ./dbt_lakehouse/dbt_project.yml:/app/dbt_lakehouse/dbt_project.yml:ro
+      - ./orchestration/ingestion/src:/app/orchestration/ingestion/src:ro
     depends_on:
+      postgres:
+        condition: service_healthy
       rustfs:
         condition: service_started
       unity-catalog:
@@ -141,9 +239,6 @@ services:
 
   dagster-daemon:
     image: ndr-lakehouse-dagster:local
-    build:
-      context: .
-      dockerfile: Dockerfile.dagster
     hostname: dagster-daemon
     command:
       - dagster-daemon
@@ -157,15 +252,72 @@ services:
       LANDING_BUCKET: landing-zone
       DAGSTER_HOME: /app/.dagster
       DBT_PROFILES_DIR: /app/dbt_lakehouse
-      PYTHONPATH: /app/orchestration/ingestion/src
+      # Must match dagster-webserver: the daemon executes the same dbt CLI.
+      DBT_ALLOW_EXPERIMENTAL_ADAPTERS: "true"
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+      # Must match the image's ENV PYTHONPATH; see dagster-webserver above.
+      PYTHONPATH: /app/orchestration/ingestion/src:/app
+      # Must match dagster-webserver: the daemon heartbeats into the same
+      # Postgres instance, and a mismatch silently splits the run history.
+      DAGSTER_PG_HOSTNAME: postgres
+      DAGSTER_PG_PORT: "5432"
+      DAGSTER_PG_USERNAME: dagster
+      DAGSTER_PG_PASSWORD: dagster
+      DAGSTER_PG_DB: dagster
     volumes:
       - dagster-home:/app/.dagster
+      - ./dagster-instance.yaml:/app/.dagster/dagster.yaml:ro
+      - ./use_case:/app/use_case:ro
+      - ./dbt_lakehouse/models:/app/dbt_lakehouse/models:ro
+      - ./dbt_lakehouse/macros:/app/dbt_lakehouse/macros:ro
+      - ./dbt_lakehouse/dbt_project.yml:/app/dbt_lakehouse/dbt_project.yml:ro
+      - ./orchestration/ingestion/src:/app/orchestration/ingestion/src:ro
     depends_on:
+      postgres:
+        condition: service_healthy
       dagster-webserver:
         condition: service_started
+    restart: unless-stopped
+
+  portal:
+    image: ndr-lakehouse-portal:local
+    build:
+      context: .
+      dockerfile: Dockerfile.portal
+    hostname: portal
+    environment:
+      <<: *aws-env
+      PORTAL_DATABASE_URL: postgresql+psycopg2://dagster:dagster@postgres:5432/portal
+      PORTAL_SECRET_KEY: ${PORTAL_SECRET_KEY:-ndr-lakehouse-dev-portal-secret-change-me}
+      PORTAL_ADMIN_USER: ${PORTAL_ADMIN_USER:-admin}
+      PORTAL_ADMIN_PASSWORD: ${PORTAL_ADMIN_PASSWORD:-admin}
+      PORTAL_GATEWAY_PORT: "8088"
+      PORTAL_BASE_DOMAIN: localhost
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    restart: unless-stopped
+
+  gateway:
+    image: ndr-lakehouse-gateway:local
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    hostname: gateway
+    environment:
+      GATEWAY_PORT: "8088"
+      GATEWAY_BASE_DOMAIN: localhost
+    ports:
+      - "8088:8088"
+    depends_on:
+      portal:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   rustfs-data:
   unity-catalog-data:
   dagster-home:
+  postgres-data:

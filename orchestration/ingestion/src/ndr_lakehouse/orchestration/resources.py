@@ -3,28 +3,30 @@
 from __future__ import annotations
 
 import logging
-import shutil
 
-from ndr_lakehouse.asset_property.schema_validator import (
-    PlatformConfig,
-    load_platform_config,
-)
+from ndr_lakehouse.asset_property.schema_validator import load_platform_config
+from ndr_lakehouse.asset_property.use_case import UseCaseConfig
 from ndr_lakehouse.iceberg.resource import SparkIcebergResource
 from ndr_lakehouse.landing.resource import NativeIngestorResource
-from ndr_lakehouse.orchestration.paths import ASSET_PROPERTY_DIR, DBT_PROJECT_DIR
+from ndr_lakehouse.orchestration.dbt_runner import DbtCliResource
 from ndr_lakehouse.provisioning.resource import UnityCatalogProvisionerResource
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PLATFORM = load_platform_config(ASSET_PROPERTY_DIR / "platform.yaml")
-
 
 def build_resource_bundle(
-    platform: PlatformConfig | None = None,
+    use_case: UseCaseConfig,
+    *,
+    register_dbt: bool = True,
 ) -> dict[str, object]:
-    """Instantiate one shared resource bundle for the whole graph."""
+    """Instantiate the shared resource bundle for one use case.
 
-    platform = platform or DEFAULT_PLATFORM
+    There is no default platform: the platform file always comes from the
+    use case manifest, and a missing manifest is a configuration error rather
+    than something to paper over with hardcoded defaults.
+    """
+
+    platform = load_platform_config(use_case.platform_path)
     storage = platform.storage
     unity = platform.unity_catalog
     spark = platform.spark
@@ -65,14 +67,38 @@ def build_resource_bundle(
         "spark_iceberg": spark_resource,
     }
 
-    try:
-        from dagster_dbt import DbtCliResource
+    if not register_dbt:
+        return resources
 
-        if shutil.which("dbt"):
-            resources["dbt"] = DbtCliResource(project_dir=str(DBT_PROJECT_DIR))
-        else:
-            logger.info("dbt executable not found; dbt assets will be skipped")
-    except Exception as exc:
-        logger.warning("DbtCliResource unavailable: %s", exc)
+    project_dir = use_case.dbt_project_path
+    if not (project_dir / "dbt_project.yml").is_file():
+        logger.warning(
+            "dbt project not found at %s (missing dbt_project.yml); the dbt resource will be skipped",
+            project_dir,
+        )
+        return resources
+
+    # The dbt/ManifestFlow assets read the compiled manifest for their graph, so
+    # a resource without one would only half-wire dbt: present in the bundle but
+    # feeding no assets. Require it here and keep the bundle the single source of
+    # truth for "dbt is wired".
+    if not use_case.dbt_manifest_path.is_file():
+        logger.warning(
+            "dbt manifest not found at %s; the dbt resource will be skipped. Run `dbt parse` to compile it.",
+            use_case.dbt_manifest_path,
+        )
+        return resources
+
+    # dbt v2 is a bundled binary with no importable Python API, so the resource
+    # is a thin CLI wrapper rather than dagster-dbt's DbtCliResource.
+    dbt_resource = DbtCliResource(project_dir=str(project_dir))
+    if not dbt_resource.is_available():
+        logger.warning(
+            "DbtCliResource unavailable: `%s` is not on PATH; the dbt resource will be skipped. "
+            "Install it with `uv sync --extra dbt`.",
+            dbt_resource.executable,
+        )
+        return resources
+    resources["dbt"] = dbt_resource
 
     return resources

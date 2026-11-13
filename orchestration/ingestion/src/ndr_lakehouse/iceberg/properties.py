@@ -33,6 +33,7 @@ class TablePropertiesSynchronizer:
         if not merged:
             return
         rendered = ", ".join(
-            f"{key}='{str(value).replace(chr(39), chr(39) * 2)}'" for key, value in merged.items()
+            f"'{str(key).replace(chr(39), chr(39) * 2)}'='{str(value).replace(chr(39), chr(39) * 2)}'"
+            for key, value in merged.items()
         )
         spark.sql(f"ALTER TABLE {full_table_name} SET TBLPROPERTIES ({rendered})")

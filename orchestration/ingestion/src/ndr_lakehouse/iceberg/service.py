@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
-from ndr_lakehouse.asset_property.schema_validator import AssetConfig
+from ndr_lakehouse.asset_property.schema_validator import AssetConfig, CatalogProperties
 from ndr_lakehouse.domain.ports import SparkSessionProvider
+from ndr_lakehouse.iceberg.delta_api import ensure_table_registered, table_location
 from ndr_lakehouse.iceberg.properties import TablePropertiesSynchronizer
 from ndr_lakehouse.iceberg.reader import NativeDatasetReader
 from ndr_lakehouse.iceberg.schema import SchemaEvolutionService
 from ndr_lakehouse.iceberg.transformer import DataFrameTransformer
 from ndr_lakehouse.iceberg.writers import WriteStrategyFactory
+from ndr_lakehouse.provisioning.uc_columns import columns_from_spark_schema
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,7 @@ class IcebergLoadService:
         writers: WriteStrategyFactory,
         properties: TablePropertiesSynchronizer,
         snapshots: SnapshotInspector,
+        table_registrar: Callable[[CatalogProperties, str, list[dict[str, Any]]], Any] | None = None,
     ) -> None:
         self.session_provider = session_provider
         self.reader = reader
@@ -52,6 +56,7 @@ class IcebergLoadService:
         self.writers = writers
         self.properties = properties
         self.snapshots = snapshots
+        self.table_registrar = table_registrar
 
     def load(self, config: AssetConfig, landing_uri: str) -> dict[str, Any]:
         source = config.source_properties
@@ -77,7 +82,7 @@ class IcebergLoadService:
             dedup_order_by=catalog.dedup_order_by,
         )
 
-        table_existed = bool(spark.catalog.tableExists(full_table_name))
+        table_existed = ensure_table_registered(spark, full_table_name)
         if not table_existed:
             logger.info("Creating Iceberg table %s", full_table_name)
             self.writers.create("overwrite").write(spark, df, catalog)
@@ -90,6 +95,15 @@ class IcebergLoadService:
                 full_table_name,
                 catalog.iceberg_tblproperties,
             )
+
+        if self.table_registrar is not None:
+            columns = columns_from_spark_schema(getattr(df, "schema", None))
+            if not columns:
+                try:
+                    columns = columns_from_spark_schema(getattr(spark.table(full_table_name), "schema", None))
+                except Exception:
+                    columns = []
+            self.table_registrar(catalog, table_location(spark, full_table_name), columns)
 
         return {
             "table": full_table_name,

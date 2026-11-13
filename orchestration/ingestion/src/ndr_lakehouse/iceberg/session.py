@@ -56,20 +56,31 @@ class SparkSessionFactory(SparkSessionProvider):
             f"{iceberg_catalog}.s3.secret-access-key": settings.secret_access_key,
             f"{iceberg_catalog}.s3.region": settings.region,
             # RustFS S3A access for Delta/Spark file IO.
+            "spark.hadoop.fs.s3.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
             "spark.hadoop.fs.s3a.endpoint": settings.endpoint_url,
             "spark.hadoop.fs.s3a.access.key": settings.access_key_id,
             "spark.hadoop.fs.s3a.secret.key": settings.secret_access_key,
             "spark.hadoop.fs.s3a.path.style.access": str(settings.use_path_style).lower(),
             "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
-            "spark.hadoop.fs.s3a.aws.credentials.provider": (
-                "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
-            ),
+            "spark.hadoop.fs.s3a.aws.credentials.provider": ("org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"),
             "spark.sql.warehouse.dir": settings.warehouse,
         }
         jars = sorted(glob.glob(os.path.join(settings.spark_jars_dir, "*.jar")))
         if jars:
             configs["spark.jars"] = ",".join(jars)
         return configs
+
+    @staticmethod
+    def _bind_catalog_delegate(spark: Any, catalog_name: str) -> None:
+        if catalog_name == "spark_catalog":
+            return
+        jspark = getattr(spark, "_jsparkSession", None)
+        if jspark is None:
+            return
+        catalog_manager = jspark.sessionState().catalogManager()
+        catalog_plugin = catalog_manager.catalog(catalog_name)
+        if hasattr(catalog_plugin, "setDelegateCatalog"):
+            catalog_plugin.setDelegateCatalog(catalog_manager.v2SessionCatalog())
 
     def create(self, catalog_name: str | None = None) -> Any:
         from pyspark.sql import SparkSession
@@ -78,4 +89,6 @@ class SparkSessionFactory(SparkSessionProvider):
         builder = SparkSession.builder.appName(self.settings.app_name).master(self.settings.master)
         for key, value in self.configs(selected).items():
             builder = builder.config(key, value)
-        return builder.getOrCreate()
+        spark = builder.getOrCreate()
+        self._bind_catalog_delegate(spark, selected)
+        return spark

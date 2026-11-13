@@ -1,28 +1,29 @@
 {{ config(materialized='table', schema='gold', file_format='delta', tags=['gold', 'dimension']) }}
 
-with source as (
-    select * from {{ source('bronze', 'communes_geo_77') }}
+
+WITH SOURCE AS (
+    SELECT * FROM {{ source('deduplication_zone', 'communes_geo_77') }}
 ),
 
-deduplicated as (
-    select
+DEDUPLICATED AS (
+    SELECT
         *,
-        row_number() over (
-            partition by code
-            order by _ingested_at desc
-        ) as ingest_row_number
-    from source
+        row_number() OVER (
+            PARTITION BY CODE
+            ORDER BY _INGESTED_AT DESC
+        ) AS INGEST_ROW_NUMBER
+    FROM SOURCE
 )
 
-select
-    cast(code as string)                              as commune_code,
-    cast(nom as string)                               as commune_name,
-    cast(code_departement as string)                  as department_code,
-    cast(code_region as string)                       as region_code,
-    cast(code_epci as string)                         as epci_code,
-    cast(population as bigint)                        as population,
-    cast(centre.coordinates[0] as double)             as longitude,
-    cast(centre.coordinates[1] as double)             as latitude,
-    _ingested_at
-from deduplicated
-where ingest_row_number = 1
+SELECT
+    DEDUPLICATED._INGESTED_AT,
+    CAST(DEDUPLICATED.CODE AS string) AS COMMUNE_CODE,
+    CAST(DEDUPLICATED.NOM AS string) AS COMMUNE_NAME,
+    CAST(DEDUPLICATED.CODE_DEPARTEMENT AS string) AS DEPARTMENT_CODE,
+    CAST(DEDUPLICATED.CODE_REGION AS string) AS REGION_CODE,
+    CAST(DEDUPLICATED.CODE_EPCI AS string) AS EPCI_CODE,
+    CAST(DEDUPLICATED.POPULATION AS bigint) AS POPULATION,
+    CAST(DEDUPLICATED.CENTRE.COORDINATES[0] AS double) AS LONGITUDE,
+    CAST(DEDUPLICATED.CENTRE.COORDINATES[1] AS double) AS LATITUDE
+FROM DEDUPLICATED
+WHERE DEDUPLICATED.INGEST_ROW_NUMBER = 1

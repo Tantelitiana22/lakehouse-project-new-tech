@@ -6,15 +6,17 @@ from typing import Any
 
 from dagster import ConfigurableResource
 
-from ndr_lakehouse.asset_property.schema_validator import AssetConfig
+from ndr_lakehouse.asset_property.schema_validator import AssetConfig, CatalogProperties
 from ndr_lakehouse.iceberg.merge import DeltaMergeExecutor
-from ndr_lakehouse.iceberg.properties import TablePropertiesSynchronizer
+from ndr_lakehouse.iceberg.properties import TablePropertiesSynchronizer, with_uniform_iceberg_properties
 from ndr_lakehouse.iceberg.reader import NativeDatasetReader
 from ndr_lakehouse.iceberg.schema import SchemaEvolutionService
 from ndr_lakehouse.iceberg.service import IcebergLoadService, SnapshotInspector
 from ndr_lakehouse.iceberg.session import SparkSessionFactory, SparkSettings
 from ndr_lakehouse.iceberg.transformer import DataFrameTransformer
 from ndr_lakehouse.iceberg.writers import WriteStrategyFactory
+from ndr_lakehouse.infrastructure.unity_catalog import UnityCatalogRestClient
+from ndr_lakehouse.provisioning.unity_catalog import NamespaceProvisioner
 
 
 class SparkIcebergResource(ConfigurableResource):
@@ -46,6 +48,32 @@ class SparkIcebergResource(ConfigurableResource):
             spark_jars_dir=self.spark_jars_dir,
         )
 
+    def _uc_base_url(self) -> str:
+        return self.uc_iceberg_uri.split("/api/", maxsplit=1)[0].rstrip("/")
+
+    def _register_uc_table(
+        self,
+        catalog: CatalogProperties,
+        location: str,
+        columns: list[dict[str, Any]],
+    ) -> None:
+        client = UnityCatalogRestClient(base_url=self._uc_base_url())
+        try:
+            NamespaceProvisioner(
+                gateway=client,
+                storage_root=self.warehouse,
+            ).ensure_table(
+                catalog_name=catalog.catalog_name,
+                schema_name=catalog.schema_name,
+                table_name=catalog.table_name,
+                storage_location=location,
+                columns=columns,
+                comment=catalog.iceberg_tblproperties.get("comment", ""),
+                properties=with_uniform_iceberg_properties(catalog.iceberg_tblproperties),
+            )
+        finally:
+            client.close()
+
     def _service(self) -> IcebergLoadService:
         settings = self._settings()
         return IcebergLoadService(
@@ -56,6 +84,7 @@ class SparkIcebergResource(ConfigurableResource):
             writers=WriteStrategyFactory.default(DeltaMergeExecutor()),
             properties=TablePropertiesSynchronizer(),
             snapshots=SnapshotInspector(),
+            table_registrar=self._register_uc_table,
         )
 
     def get_spark_session(self, catalog_name: str | None = None) -> Any:

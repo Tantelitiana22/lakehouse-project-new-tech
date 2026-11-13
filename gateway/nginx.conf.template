@@ -1,0 +1,283 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# Portal landing page (localhost and portal.localhost)
+server {
+    listen       ${GATEWAY_PORT} default_server;
+    server_name  ${GATEWAY_BASE_DOMAIN} portal.${GATEWAY_BASE_DOMAIN} _;
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    client_max_body_size 0;
+
+    location / {
+        set $portal_upstream http://portal:8000;
+        proxy_pass         $portal_upstream$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $http_host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_buffering    off;
+    }
+}
+
+# Scoped S3 SigV4 proxy (s3.localhost)
+server {
+    listen       ${GATEWAY_PORT};
+    server_name  s3.${GATEWAY_BASE_DOMAIN};
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    client_max_body_size 0;
+
+    location / {
+        set $portal_upstream http://portal:8000;
+        proxy_pass         $portal_upstream/s3$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $http_host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_buffering    off;
+    }
+}
+
+# Dagster Webserver (dagster.localhost)
+server {
+    listen       ${GATEWAY_PORT};
+    server_name  dagster.${GATEWAY_BASE_DOMAIN};
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    location = /__auth_verify {
+        internal;
+        set $portal_upstream http://portal:8000;
+        proxy_pass             $portal_upstream/internal/verify?service=dagster;
+        proxy_pass_request_body off;
+        proxy_set_header       Content-Length "";
+        proxy_set_header       Host $http_host;
+        proxy_set_header       Cookie $http_cookie;
+    }
+
+    location = /__auth_callback {
+        set $portal_upstream http://portal:8000;
+        proxy_pass       $portal_upstream/__auth_callback$is_args$args;
+        proxy_set_header Host $http_host;
+    }
+
+    location = /__auth_forbidden {
+        internal;
+        set $portal_upstream http://portal:8000;
+        proxy_pass             $portal_upstream/internal/forbidden?service=dagster;
+        proxy_pass_request_body off;
+        proxy_set_header       Content-Length "";
+        proxy_set_header       Host $http_host;
+        proxy_set_header       Cookie $http_cookie;
+    }
+
+    location @auth_login_redirect {
+        return 302 http://portal.${GATEWAY_BASE_DOMAIN}:${GATEWAY_PORT}/login?next=$scheme://$http_host$request_uri;
+    }
+
+    location / {
+        auth_request     /__auth_verify;
+        error_page       401 = @auth_login_redirect;
+        error_page       403 = /__auth_forbidden;
+        auth_request_set $auth_user $upstream_http_x_auth_user;
+        auth_request_set $auth_admin $upstream_http_x_auth_admin;
+
+        set $dagster_upstream http://dagster-webserver:3000;
+        proxy_pass         $dagster_upstream$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        $connection_upgrade;
+        proxy_set_header   Host              $http_host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Auth-User       $auth_user;
+        proxy_set_header   X-Auth-Admin      $auth_admin;
+        proxy_read_timeout 300s;
+        proxy_buffering    off;
+    }
+}
+
+# Unity Catalog UI (uc.localhost)
+server {
+    listen       ${GATEWAY_PORT};
+    server_name  uc.${GATEWAY_BASE_DOMAIN};
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    location = /__auth_verify {
+        internal;
+        set $portal_upstream http://portal:8000;
+        proxy_pass             $portal_upstream/internal/verify?service=unity-catalog;
+        proxy_pass_request_body off;
+        proxy_set_header       Content-Length "";
+        proxy_set_header       Host $http_host;
+        proxy_set_header       Cookie $http_cookie;
+    }
+
+    location = /__auth_callback {
+        set $portal_upstream http://portal:8000;
+        proxy_pass       $portal_upstream/__auth_callback$is_args$args;
+        proxy_set_header Host $http_host;
+    }
+
+    location = /__auth_forbidden {
+        internal;
+        set $portal_upstream http://portal:8000;
+        proxy_pass             $portal_upstream/internal/forbidden?service=unity-catalog;
+        proxy_pass_request_body off;
+        proxy_set_header       Content-Length "";
+        proxy_set_header       Host $http_host;
+        proxy_set_header       Cookie $http_cookie;
+    }
+
+    location @auth_login_redirect {
+        return 302 http://portal.${GATEWAY_BASE_DOMAIN}:${GATEWAY_PORT}/login?next=$scheme://$http_host$request_uri;
+    }
+
+    location / {
+        auth_request     /__auth_verify;
+        error_page       401 = @auth_login_redirect;
+        error_page       403 = /__auth_forbidden;
+        auth_request_set $auth_user $upstream_http_x_auth_user;
+        auth_request_set $auth_admin $upstream_http_x_auth_admin;
+
+        set $uc_upstream http://unity-catalog-ui:3000;
+        proxy_pass         $uc_upstream$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $http_host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Auth-User       $auth_user;
+        proxy_set_header   X-Auth-Admin      $auth_admin;
+        proxy_read_timeout 300s;
+        proxy_buffering    off;
+    }
+}
+
+# Spark Thrift Web UI (spark.localhost)
+server {
+    listen       ${GATEWAY_PORT};
+    server_name  spark.${GATEWAY_BASE_DOMAIN};
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    location = /__auth_verify {
+        internal;
+        set $portal_upstream http://portal:8000;
+        proxy_pass             $portal_upstream/internal/verify?service=spark-ui;
+        proxy_pass_request_body off;
+        proxy_set_header       Content-Length "";
+        proxy_set_header       Host $http_host;
+        proxy_set_header       Cookie $http_cookie;
+    }
+
+    location = /__auth_callback {
+        set $portal_upstream http://portal:8000;
+        proxy_pass       $portal_upstream/__auth_callback$is_args$args;
+        proxy_set_header Host $http_host;
+    }
+
+    location = /__auth_forbidden {
+        internal;
+        set $portal_upstream http://portal:8000;
+        proxy_pass             $portal_upstream/internal/forbidden?service=spark-ui;
+        proxy_pass_request_body off;
+        proxy_set_header       Content-Length "";
+        proxy_set_header       Host $http_host;
+        proxy_set_header       Cookie $http_cookie;
+    }
+
+    location @auth_login_redirect {
+        return 302 http://portal.${GATEWAY_BASE_DOMAIN}:${GATEWAY_PORT}/login?next=$scheme://$http_host$request_uri;
+    }
+
+    location / {
+        auth_request     /__auth_verify;
+        error_page       401 = @auth_login_redirect;
+        error_page       403 = /__auth_forbidden;
+        auth_request_set $auth_user $upstream_http_x_auth_user;
+        auth_request_set $auth_admin $upstream_http_x_auth_admin;
+
+        set $spark_upstream http://spark-thrift:4040;
+        proxy_pass         $spark_upstream$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $http_host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Auth-User       $auth_user;
+        proxy_set_header   X-Auth-Admin      $auth_admin;
+        proxy_read_timeout 300s;
+        proxy_buffering    off;
+    }
+}
+
+# RustFS Admin Console (rustfs.localhost)
+server {
+    listen       ${GATEWAY_PORT};
+    server_name  rustfs.${GATEWAY_BASE_DOMAIN};
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    client_max_body_size 0;
+
+    location = /__auth_verify {
+        internal;
+        set $portal_upstream http://portal:8000;
+        proxy_pass             $portal_upstream/internal/verify?service=rustfs-console;
+        proxy_pass_request_body off;
+        proxy_set_header       Content-Length "";
+        proxy_set_header       Host $http_host;
+        proxy_set_header       Cookie $http_cookie;
+    }
+
+    location = /__auth_callback {
+        set $portal_upstream http://portal:8000;
+        proxy_pass       $portal_upstream/__auth_callback$is_args$args;
+        proxy_set_header Host $http_host;
+    }
+
+    location = /__auth_forbidden {
+        internal;
+        set $portal_upstream http://portal:8000;
+        proxy_pass             $portal_upstream/internal/forbidden?service=rustfs-console;
+        proxy_pass_request_body off;
+        proxy_set_header       Content-Length "";
+        proxy_set_header       Host $http_host;
+        proxy_set_header       Cookie $http_cookie;
+    }
+
+    location @auth_login_redirect {
+        return 302 http://portal.${GATEWAY_BASE_DOMAIN}:${GATEWAY_PORT}/login?next=$scheme://$http_host$request_uri;
+    }
+
+    location / {
+        auth_request     /__auth_verify;
+        error_page       401 = @auth_login_redirect;
+        error_page       403 = /__auth_forbidden;
+        auth_request_set $auth_user $upstream_http_x_auth_user;
+        auth_request_set $auth_admin $upstream_http_x_auth_admin;
+
+        set $rustfs_upstream http://rustfs:9001;
+        proxy_pass         $rustfs_upstream$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        $connection_upgrade;
+        proxy_set_header   Host              $http_host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Auth-User       $auth_user;
+        proxy_set_header   X-Auth-Admin      $auth_admin;
+        proxy_read_timeout 300s;
+        proxy_buffering    off;
+    }
+}

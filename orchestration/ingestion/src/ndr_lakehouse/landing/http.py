@@ -91,17 +91,12 @@ class RetryingHttpClient:
                     json_body=source.json_body,
                 ) as response:
                     last_response = response
-                    if (
-                        self.policy.is_retryable(response.status_code)
-                        and attempt < self.policy.max_retries
-                    ):
+                    if self.policy.is_retryable(response.status_code) and attempt < self.policy.max_retries:
                         response.read()
                         self.policy.sleep_for(attempt, response)
                         continue
                     response.raise_for_status()
-                    return b"".join(
-                        chunk for chunk in response.iter_bytes(chunk_size=self.chunk_size) if chunk
-                    )
+                    return b"".join(chunk for chunk in response.iter_bytes(chunk_size=self.chunk_size) if chunk)
             except httpx.TransportError:
                 if attempt >= self.policy.max_retries:
                     raise

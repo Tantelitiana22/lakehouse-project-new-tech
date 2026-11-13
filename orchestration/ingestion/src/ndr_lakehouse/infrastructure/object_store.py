@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -95,3 +96,33 @@ class Boto3ObjectStore:
             target_bucket,
             target_key,
         )
+
+    def read_delta_schema_json(self, bucket: str, table_prefix: str) -> str | None:
+        """Read the latest ``metaData.schemaString`` from a Delta table's log."""
+
+        log_prefix = f"{table_prefix.strip('/')}/_delta_log/"
+        commit_keys: list[str] = []
+        continuation: str | None = None
+        while True:
+            kwargs: dict[str, Any] = {"Bucket": bucket, "Prefix": log_prefix}
+            if continuation is not None:
+                kwargs["ContinuationToken"] = continuation
+            response = self.client.list_objects_v2(**kwargs)
+            for item in response.get("Contents", ()):
+                key = str(item.get("Key", ""))
+                if key.endswith(".json") and "/_delta_log/" in key:
+                    commit_keys.append(key)
+            if not response.get("IsTruncated"):
+                break
+            continuation = response.get("NextContinuationToken")
+
+        for key in sorted(commit_keys, reverse=True):
+            body = self.client.get_object(Bucket=bucket, Key=key)["Body"].read().decode("utf-8")
+            for line in body.splitlines():
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                metadata = record.get("metaData")
+                if isinstance(metadata, dict) and metadata.get("schemaString"):
+                    return str(metadata["schemaString"])
+        return None

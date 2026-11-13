@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Access Denied — Lakehouse Portal{% endblock %}
+{% block content %}
+<div style="max-width: 520px; margin: 4rem auto;">
+  <div class="card">
+    <h1 style="margin-top:0; color:#fca5a5;">Access Denied</h1>
+    <p class="muted">
+      {% if service_name %}
+      Your account does not have permission to access <strong>{{ service_name }}</strong>.
+      {% else %}
+      You do not have permission to access this resource.
+      {% endif %}
+    </p>
+    <p class="muted">Contact your lakehouse administrator to request access.</p>
+    <a class="btn" href="{{ portal_origin }}/">Back to Portal Launchpad</a>
+  </div>
+</div>
+{% endblock %}

@@ -32,31 +32,19 @@ class OverwriteWriteStrategy(WriteStrategy):
         self._table_creator = table_creator
 
     def write(self, spark: Any, df: Any, catalog: CatalogProperties) -> None:
-        builder = (
-            self._table_creator(spark).tableName(catalog.full_table_name).addColumns(df.schema)
-        )
+        builder = self._table_creator(spark).tableName(catalog.full_table_name).addColumns(df.schema)
         if catalog.partition_by:
             builder = builder.partitionedBy(*catalog.partition_by)
         for key, value in with_uniform_iceberg_properties(catalog.iceberg_tblproperties).items():
             builder = builder.property(key, str(value))
         builder.execute()
 
-        (
-            df.write.format("delta")
-            .mode("append")
-            .option("mergeSchema", "true")
-            .saveAsTable(catalog.full_table_name)
-        )
+        (df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(catalog.full_table_name))
 
 
 class AppendWriteStrategy(WriteStrategy):
     def write(self, spark: Any, df: Any, catalog: CatalogProperties) -> None:
-        (
-            df.write.format("delta")
-            .mode("append")
-            .option("mergeSchema", "true")
-            .saveAsTable(catalog.full_table_name)
-        )
+        (df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(catalog.full_table_name))
 
 
 class MergeWriteStrategy(WriteStrategy):

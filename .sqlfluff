@@ -1,0 +1,56 @@
+[sqlfluff]
+# Read by both `dbt lint` and `dbt format` (dbt v2) and by plain sqlfluff.
+#
+# dialect: the dbt project targets Spark (dbt_lakehouse/profiles.yml ->
+#   type: spark). `dbt lint` accepts `sparksql` but currently aliases it to its
+#   Databricks parser; `trino` cannot parse `explode`, `sequence`,
+#   `interval 1 day` or Spark `cast(...)` at all.
+# templater: `dbt lint`/`dbt format` only support the SQLFluff `dbt` templater.
+#   Leaving it at `jinja` logs `[NotSupported (dbt9000)]` on every run.
+# max_line_length: 120, matching .flake8, .pylintrc, [tool.ruff] and
+#   [tool.isort].
+dialect = sparksql
+templater = dbt
+max_line_length = 120
+
+# Without this, `dbt lint` skips any file SQLFluff would consider "too large".
+large_file_skip_byte_limit = 0
+
+# Lint .sql and .sql.j2 sources; .dml/.ddl are published artefacts, not sources.
+sql_file_exts = .sql,.sql.j2
+
+[sqlfluff:indentation]
+# Join conditions and USING/ON clauses hang one level in, which is what the Gold
+# models already look like; Jinja blocks stay flush so `{% if %}` bodies do not
+# shift the SELECT list.
+indent_unit = space
+tab_space_size = 4
+indented_joins = False
+indented_using_on = True
+template_blocks_indent = False
+
+[sqlfluff:templater]
+unwrap_wrapped_queries = True
+
+[sqlfluff:templater:dbt]
+# Resolve the project so `ref()`/`source()` are expanded from the real project
+# instead of being treated as undefined Jinja.
+project_dir = dbt_lakehouse
+profiles_dir = dbt_lakehouse
+target = dev
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = upper
+unquoted_identifiers_policy = all
+
+[sqlfluff:rules:aliasing.table]
+aliasing = explicit
+
+[sqlfluff:rules:aliasing.column]
+aliasing = explicit
+
+[sqlfluff:rules:aliasing.length]
+min_alias_length = 3

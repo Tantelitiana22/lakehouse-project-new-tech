@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Lakehouse Portal{% endblock %}
+{% block content %}
+<div style="max-width: 420px; margin: 4rem auto;">
+  <div class="card">
+    <h1 style="margin-top:0; font-size:1.35rem;">Lakehouse Access Portal</h1>
+    <p class="muted" style="margin-top:0;">Sign in to access Dagster, Unity Catalog, Spark UI, and RustFS buckets.</p>
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next_url }}" />
+      <div style="margin-bottom:0.85rem;">
+        <label for="username" style="display:block; margin-bottom:0.25rem; font-size:0.85rem;">Username</label>
+        <input id="username" name="username" type="text" required autofocus style="width:100%;" />
+      </div>
+      <div style="margin-bottom:1.1rem;">
+        <label for="password" style="display:block; margin-bottom:0.25rem; font-size:0.85rem;">Password</label>
+        <input id="password" name="password" type="password" required style="width:100%;" />
+      </div>
+      <button type="submit" class="btn" style="width:100%;">Sign in</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

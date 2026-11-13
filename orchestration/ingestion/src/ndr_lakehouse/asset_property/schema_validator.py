@@ -16,6 +16,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ndr_lakehouse.domain.errors import DuplicateAssetNameError
+
 Identifier = str
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -73,7 +75,7 @@ class UnityCatalogConfig(_StrictModel):
     base_url: str = "http://unity-catalog:8080"
     api_version: str = "2.1"
     catalog_name: str = "lakehouse"
-    schema_name: str = "bronze"
+    schema_name: str = "deduplication_zone"
     storage_root: str = "s3://lakehouse/warehouse"
 
     @field_validator("base_url")
@@ -271,7 +273,7 @@ class CatalogProperties(_StrictModel):
     """Iceberg + Unity Catalog integration contract."""
 
     catalog_name: Identifier = "lakehouse"
-    schema_name: Identifier = "bronze"
+    schema_name: Identifier = "deduplication_zone"
     table_name: Identifier
     write_mode: WriteMode = "overwrite"
     primary_keys: list[str] = Field(default_factory=list)
@@ -289,9 +291,7 @@ class CatalogProperties(_StrictModel):
     @classmethod
     def _validate_identifier(cls, value: str) -> str:
         if not _IDENTIFIER_RE.fullmatch(value):
-            raise ValueError(
-                f"invalid Unity Catalog identifier {value!r}; expected [A-Za-z_][A-Za-z0-9_]*"
-            )
+            raise ValueError(f"invalid Unity Catalog identifier {value!r}; expected [A-Za-z_][A-Za-z0-9_]*")
         return value
 
     @field_validator("primary_keys", "partition_by")
@@ -334,11 +334,12 @@ class AssetConfig(_StrictModel):
 
     name: str
     description: str = ""
-    group_name: str = "bronze"
+    group_name: str = "deduplication_zone"
     owner: str = "data-platform"
     tags: dict[str, str] = Field(default_factory=dict)
     source_properties: SourceProperties
     catalog_properties: CatalogProperties
+    handler: str | None = None
 
     @field_validator("name", "group_name")
     @classmethod
@@ -349,7 +350,7 @@ class AssetConfig(_StrictModel):
 
     @property
     def landing_asset_key(self) -> list[str]:
-        return ["landing", self.name]
+        return [self.catalog_properties.catalog_name, "landing_zone", self.name]
 
     @property
     def iceberg_asset_key(self) -> list[str]:
@@ -403,23 +404,28 @@ def load_asset_configs(path: str | Path) -> list[AssetConfig]:
     return load_asset_config_file(path)
 
 
-def discover_asset_configs(asset_dir: str | Path) -> list[AssetConfig]:
-    """Scan a directory for ``*.yaml`` files, excluding ``platform.yaml``."""
+def discover_asset_configs(asset_dir: str | Path, *, recursive: bool = False) -> list[AssetConfig]:
+    """Scan a directory for asset declarations, excluding ``platform.yaml``.
+
+    Only the top-level ``*.yaml`` files are read by default. Pass
+    ``recursive=True`` to walk sub-directories with ``**/*.yaml``, which is how
+    a use-case ``assets/`` package is discovered. Both modes return configs in
+    sorted path order and skip ``platform.yaml`` at any depth.
+    """
 
     directory = Path(asset_dir)
     if not directory.exists():
         raise FileNotFoundError(f"asset_property directory not found: {directory}")
 
+    pattern = "**/*.yaml" if recursive else "*.yaml"
     configs: list[AssetConfig] = []
     seen: dict[str, Path] = {}
-    for path in sorted(directory.glob("*.yaml")):
+    for path in sorted(directory.glob(pattern)):
         if path.name == _PLATFORM_FILENAME:
             continue
         for config in load_asset_config_file(path):
             if config.name in seen:
-                raise ValueError(
-                    f"duplicate asset name {config.name!r} in {seen[config.name]} and {path}"
-                )
+                raise DuplicateAssetNameError(f"duplicate asset name {config.name!r} in {seen[config.name]} and {path}")
             seen[config.name] = path
             configs.append(config)
     return configs

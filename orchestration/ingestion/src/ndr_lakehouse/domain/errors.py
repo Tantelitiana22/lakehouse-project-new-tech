@@ -21,3 +21,23 @@ class UnsupportedWriteModeError(LakehouseError):
 
 class RetryExhaustedError(LakehouseError):
     """A retryable HTTP operation exhausted its retry budget."""
+
+
+class UseCaseNotFoundError(LakehouseError):
+    """No use-case manifest matched the requested name."""
+
+
+class AmbiguousDefaultUseCaseError(LakehouseError):
+    """More than one use-case manifest is marked as the default."""
+
+
+class DuplicateAssetNameError(LakehouseError, ValueError):
+    """Two asset files declare the same asset name."""
+
+
+class InvalidHandlerReferenceError(LakehouseError):
+    """A configured handler dotted path does not resolve or violates the contract."""
+
+
+class DbtCommandError(LakehouseError):
+    """A ``dbt`` CLI invocation exited non-zero or could not be launched."""

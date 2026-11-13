@@ -7,14 +7,15 @@ from typing import Any
 
 from ndr_lakehouse.asset_property.schema_validator import SourceProperties
 
+_CAMEL_BOUNDARY = re.compile(r"([a-z0-9])([A-Z])")
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
 
 
 def sanitize_column_name(name: str) -> str:
-    """Lower-case a column and replace every non ``[a-z0-9]`` character with ``_``."""
+    """Lower-case a column, splitting camelCase and replacing non ``[a-z0-9]`` with ``_``."""
 
-    lowered = str(name).strip().lower()
-    sanitized = _NON_ALNUM.sub("_", lowered)
+    snake = _CAMEL_BOUNDARY.sub(r"\1_\2", str(name).strip()).lower()
+    sanitized = _NON_ALNUM.sub("_", snake)
     if not sanitized:
         return "_unnamed"
     if sanitized[0].isdigit():

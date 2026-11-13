@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}S3 Access Keys — Lakehouse Portal{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between; margin-bottom:1rem;">
+  <div>
+    <h1 style="margin:0; font-size:1.45rem;">Scoped S3 Access Keys</h1>
+    <p class="muted" style="margin:0.2rem 0 0;">Use personal keys with the S3 proxy at <code>{{ config.s3_gateway_url }}</code>. Access is enforced per-bucket.</p>
+  </div>
+  <form method="post" action="/keys" class="row">
+    <input type="text" name="label" placeholder="Key label (e.g. laptop-cli)" />
+    <button type="submit" class="btn btn-sm">Generate S3 Key</button>
+  </form>
+</div>
+
+{% if created_key %}
+<div class="alert alert-success">
+  <strong>New S3 Access Key Created ({{ created_key.label }}):</strong> save the Secret Access Key now — it will not be shown again.
+  <pre style="margin-top:0.5rem; margin-bottom:0;">AWS_ACCESS_KEY_ID={{ created_key.access_key_id }}
+AWS_SECRET_ACCESS_KEY={{ created_key.secret_access_key }}
+aws --endpoint-url {{ config.s3_gateway_url }} s3 ls</pre>
+</div>
+{% endif %}
+
+<div class="card">
+  {% if keys %}
+  <table>
+    <thead>
+      <tr>
+        <th>Label</th>
+        <th>Access Key ID</th>
+        <th>Status</th>
+        <th style="text-align:right;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for k in keys %}
+      <tr>
+        <td>{{ k.label }}</td>
+        <td><code>{{ k.access_key_id }}</code></td>
+        <td>
+          {% if k.is_active %}
+          <span class="badge online">Active</span>
+          {% else %}
+          <span class="badge offline">Revoked</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right;">
+          {% if k.is_active %}
+          <form method="post" action="/keys/{{ k.id }}/revoke" style="margin:0;">
+            <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:0;">No S3 access keys generated yet.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:1rem;">
+  <h2 style="margin-top:0; font-size:1.05rem;">Python / boto3 Example</h2>
+  <pre style="margin-bottom:0;">import boto3
+from botocore.config import Config
+
+s3 = boto3.client(
+    "s3",
+    endpoint_url="{{ config.s3_gateway_url }}",
+    aws_access_key_id="YOUR_LHAK_KEY",
+    aws_secret_access_key="YOUR_SECRET",
+    config=Config(s3={"addressing_style": "path"}),
+)
+print([b["Name"] for b in s3.list_buckets()["Buckets"]])</pre>
+</div>
+{% endblock %}

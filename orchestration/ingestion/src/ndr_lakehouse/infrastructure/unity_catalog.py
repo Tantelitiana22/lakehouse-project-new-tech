@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import httpx
 
@@ -73,6 +75,49 @@ class UnityCatalogRestClient:
                 "name": schema_name,
                 "catalog_name": catalog_name,
                 "comment": comment,
+            },
+        )
+        if response.status_code == 409:
+            return False
+        response.raise_for_status()
+        return True
+
+    def table_exists(self, catalog_name: str, schema_name: str, table_name: str) -> bool:
+        response = self._client.get(self._path(f"tables/{catalog_name}.{schema_name}.{table_name}"))
+        if response.status_code == 404:
+            return False
+        response.raise_for_status()
+        return True
+
+    def delete_table(self, catalog_name: str, schema_name: str, table_name: str) -> bool:
+        response = self._client.delete(self._path(f"tables/{catalog_name}.{schema_name}.{table_name}"))
+        if response.status_code == 404:
+            return False
+        response.raise_for_status()
+        return True
+
+    def create_table(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        table_name: str,
+        storage_location: str,
+        columns: Sequence[Mapping[str, Any]],
+        comment: str = "",
+        properties: Mapping[str, str] | None = None,
+    ) -> bool:
+        response = self._client.post(
+            self._path("tables"),
+            json={
+                "name": table_name,
+                "catalog_name": catalog_name,
+                "schema_name": schema_name,
+                "table_type": "EXTERNAL",
+                "data_source_format": "DELTA",
+                "storage_location": storage_location,
+                "columns": [dict(col) for col in columns],
+                "comment": comment,
+                "properties": dict(properties or {}),
             },
         )
         if response.status_code == 409:

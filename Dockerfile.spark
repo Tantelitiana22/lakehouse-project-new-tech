@@ -1,5 +1,15 @@
-# Apache Spark 3.5 + Iceberg 1.6.1 + Hadoop AWS, no Hive Metastore.
-FROM apache/spark:3.5.3
+# Apache Spark 4.1.1 + Iceberg 1.12.0 + Delta 4.3.1, no Hive Metastore.
+#
+# The versions are not independent. Spark 4.1.1 is the newest release the whole
+# stack supports: ``delta-spark`` 4.3.1 requires ``pyspark<=4.1.1``, and Iceberg
+# publishes no ``iceberg-spark-runtime`` beyond Spark 4.1 (only ``-4.0_2.13`` and
+# ``-4.1_2.13`` exist). Bumping Spark alone breaks both formats.
+#
+# Scala stays 2.13 (Spark 4 is 2.13-only), so the artifact suffixes moved from
+# ``_2.12`` to ``_2.13``. ``hadoop-aws`` is pinned at 3.4.2 to match the Hadoop
+# that Spark 4.1.1 bundles; mixing Hadoop majors is what produces the classic
+# ``NoSuchMethodError: S3AFileSystem`` at runtime.
+FROM apache/spark:4.1.1-scala2.13-java17-python3-ubuntu
 
 USER root
 
@@ -8,23 +18,35 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 ARG MAVEN_BASE=https://repo1.maven.org/maven2
+# ``delta-iceberg`` is not a transitive dependency of ``delta-spark``, yet
+# UniForm needs it: without it every CREATE TABLE carrying
+# ``delta.enableIcebergCompatV2`` fails at runtime with
+# DELTA_MISSING_ICEBERG_CLASS
+# (ClassNotFoundException: org.apache.spark.sql.delta.icebergShaded.IcebergConverter).
 RUN set -eux; \
-    curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.6.1/iceberg-spark-runtime-3.5_2.12-1.6.1.jar" \
-        -o /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.6.1.jar; \
-    curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-aws-bundle/1.6.1/iceberg-aws-bundle-1.6.1.jar" \
-        -o /opt/spark/jars/iceberg-aws-bundle-1.6.1.jar; \
-    curl -fL "${MAVEN_BASE}/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar" \
-        -o /opt/spark/jars/hadoop-aws-3.3.4.jar; \
-    curl -fL "${MAVEN_BASE}/com/amazonaws/aws-java-sdk-bundle/1.12.367/aws-java-sdk-bundle-1.12.367.jar" \
-        -o /opt/spark/jars/aws-java-sdk-bundle-1.12.367.jar; \
-    curl -fL "${MAVEN_BASE}/io/delta/delta-spark_2.12/3.2.0/delta-spark_2.12-3.2.0.jar" \
-        -o /opt/spark/jars/delta-spark_2.12-3.2.0.jar; \
-    curl -fL "${MAVEN_BASE}/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar" \
-        -o /opt/spark/jars/delta-storage-3.2.0.jar
+    curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar" \
+    -o /opt/spark/jars/iceberg-spark-runtime-4.1_2.13-1.12.0.jar; \
+    curl -fL "${MAVEN_BASE}/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar" \
+    -o /opt/spark/jars/iceberg-aws-bundle-1.12.0.jar; \
+    curl -fL "${MAVEN_BASE}/org/apache/hadoop/hadoop-aws/3.4.2/hadoop-aws-3.4.2.jar" \
+    -o /opt/spark/jars/hadoop-aws-3.4.2.jar; \
+    curl -fL "${MAVEN_BASE}/com/amazonaws/aws-java-sdk-bundle/1.12.720/aws-java-sdk-bundle-1.12.720.jar" \
+    -o /opt/spark/jars/aws-java-sdk-bundle-1.12.720.jar; \
+    curl -fL "${MAVEN_BASE}/io/delta/delta-spark_2.13/4.3.1/delta-spark_2.13-4.3.1.jar" \
+    -o /opt/spark/jars/delta-spark_2.13-4.3.1.jar; \
+    curl -fL "${MAVEN_BASE}/io/delta/delta-storage/4.3.1/delta-storage-4.3.1.jar" \
+    -o /opt/spark/jars/delta-storage-4.3.1.jar; \
+    curl -fL "${MAVEN_BASE}/io/delta/delta-iceberg_2.13/4.3.1/delta-iceberg_2.13-4.3.1.jar" \
+    -o /opt/spark/jars/delta-iceberg_2.13-4.3.1.jar
 
-COPY spark/conf/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
+# Match Dockerfile.dagster: hadoop-aws 3.4.2 requires AWS SDK v2
+# s3-transfer-manager and apache-client alongside iceberg-aws-bundle 1.12.0.
+RUN set -eux; \
+    curl -fL "${MAVEN_BASE}/software/amazon/awssdk/s3-transfer-manager/2.54.17/s3-transfer-manager-2.54.17.jar" \
+    -o /opt/spark/jars/s3-transfer-manager-2.54.17.jar; \
+    curl -fL "${MAVEN_BASE}/software/amazon/awssdk/apache-client/2.54.17/apache-client-2.54.17.jar" \
+    -o /opt/spark/jars/apache-client-2.54.17.jar
 
-RUN chown -R spark:spark /opt/spark/conf /opt/spark/jars
 
 USER spark
 

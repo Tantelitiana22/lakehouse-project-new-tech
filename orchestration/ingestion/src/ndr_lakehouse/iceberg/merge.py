@@ -46,11 +46,7 @@ class DeltaMergeExecutor:
         if catalog.merge_delete_condition:
             merge = merge.whenMatchedDelete(condition=catalog.merge_delete_condition)
 
-        update_set = {
-            column: f"source.{column}"
-            for column in df.columns
-            if column not in catalog.primary_keys
-        }
+        update_set = {column: f"source.{column}" for column in df.columns if column not in catalog.primary_keys}
         if update_set:
             update_kwargs: dict[str, Any] = {"set": update_set}
             if catalog.merge_matched_update_condition:
@@ -64,9 +60,7 @@ class DeltaMergeExecutor:
         merge = merge.whenNotMatchedInsert(**insert_kwargs)
 
         if catalog.merge_not_matched_by_source_delete_condition:
-            merge = merge.whenNotMatchedBySourceDelete(
-                condition=catalog.merge_not_matched_by_source_delete_condition
-            )
+            merge = merge.whenNotMatchedBySourceDelete(condition=catalog.merge_not_matched_by_source_delete_condition)
 
         merge.execute()
         return condition

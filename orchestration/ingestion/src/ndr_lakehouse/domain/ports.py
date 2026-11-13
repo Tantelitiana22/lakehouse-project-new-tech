@@ -7,9 +7,13 @@ directly. Concrete adapters live in ``ndr_lakehouse.infrastructure`` and
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from ndr_lakehouse.asset_property.schema_validator import AssetConfig
 
 
 class ObjectStore(Protocol):
@@ -97,8 +101,52 @@ class CatalogGateway(Protocol):
         comment: str,
     ) -> bool: ...
 
+    def table_exists(self, catalog_name: str, schema_name: str, table_name: str) -> bool: ...
+
+    def delete_table(self, catalog_name: str, schema_name: str, table_name: str) -> bool: ...
+
+    def create_table(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        table_name: str,
+        storage_location: str,
+        columns: Sequence[Mapping[str, Any]],
+        comment: str = "",
+        properties: Mapping[str, str] | None = None,
+    ) -> bool: ...
+
 
 class SparkSessionProvider(Protocol):
     """Port for creating a SparkSession configured for Unity Catalog."""
 
     def create(self, catalog_name: str | None = None) -> Any: ...
+
+
+class LandingPort(Protocol):
+    """Port for landing raw records and returning the landing URI."""
+
+    def ingest(self, config: AssetConfig) -> str: ...
+
+
+class IcebergPort(Protocol):
+    """Port for loading a landed dataset into Iceberg and reporting a summary."""
+
+    def load(self, config: AssetConfig, landing_uri: str) -> dict[str, Any]: ...
+
+
+@dataclass(frozen=True)
+class HandlerContext:
+    """Collaborators and settings handed to a use-case handler."""
+
+    landing: LandingPort
+    iceberg: IcebergPort
+    settings: Mapping[str, str]
+
+
+class UseCaseHandler(Protocol):
+    """Escape hatch letting a use case override landing and/or loading per asset."""
+
+    def land(self, context: HandlerContext, config: AssetConfig) -> str | None: ...
+
+    def load(self, context: HandlerContext, config: AssetConfig, landing_uri: str) -> dict[str, Any] | None: ...

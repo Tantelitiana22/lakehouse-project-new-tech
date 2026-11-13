@@ -1,0 +1,13 @@
+# Keep the Dagster image reproducible from git: no local bytecode, no venv,
+# no test or tooling caches. `COPY use_case` would otherwise bake in whatever
+# __pycache__ the checkout happens to contain.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.superpowers/
+.git/
+.env
+.dagster/

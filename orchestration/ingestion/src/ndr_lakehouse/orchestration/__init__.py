@@ -5,28 +5,25 @@ from ndr_lakehouse.orchestration.assets import (
     discover_ingestion_configs,
 )
 from ndr_lakehouse.orchestration.dbt_assets import (
-    GOLD_ASSET_KEYS,
     build_dbt_assets,
-    metricflow_semantic_validation,
+    build_metricflow_asset,
 )
 from ndr_lakehouse.orchestration.dbt_source_sync import (
     build_sources_document,
     generate_sources_yaml,
     sync_dbt_sources,
 )
-from ndr_lakehouse.orchestration.definitions import build_definitions, defs
+from ndr_lakehouse.orchestration.definitions import build_definitions
 from ndr_lakehouse.orchestration.resources import build_resource_bundle
 
 __all__ = [
-    "GOLD_ASSET_KEYS",
     "build_dbt_assets",
     "build_definitions",
     "build_ingestion_assets_from_yaml",
+    "build_metricflow_asset",
     "build_resource_bundle",
     "build_sources_document",
-    "defs",
     "discover_ingestion_configs",
     "generate_sources_yaml",
-    "metricflow_semantic_validation",
     "sync_dbt_sources",
 ]
