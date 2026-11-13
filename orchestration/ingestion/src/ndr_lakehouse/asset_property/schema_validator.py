@@ -75,7 +75,7 @@ class UnityCatalogConfig(_StrictModel):
     base_url: str = "http://unity-catalog:8080"
     api_version: str = "2.1"
     catalog_name: str = "lakehouse"
-    schema_name: str = "bronze"
+    schema_name: str = "deduplication_zone"
     storage_root: str = "s3://lakehouse/warehouse"
 
     @field_validator("base_url")
@@ -273,7 +273,7 @@ class CatalogProperties(_StrictModel):
     """Iceberg + Unity Catalog integration contract."""
 
     catalog_name: Identifier = "lakehouse"
-    schema_name: Identifier = "bronze"
+    schema_name: Identifier = "deduplication_zone"
     table_name: Identifier
     write_mode: WriteMode = "overwrite"
     primary_keys: list[str] = Field(default_factory=list)
@@ -334,7 +334,7 @@ class AssetConfig(_StrictModel):
 
     name: str
     description: str = ""
-    group_name: str = "bronze"
+    group_name: str = "deduplication_zone"
     owner: str = "data-platform"
     tags: dict[str, str] = Field(default_factory=dict)
     source_properties: SourceProperties
@@ -350,7 +350,7 @@ class AssetConfig(_StrictModel):
 
     @property
     def landing_asset_key(self) -> list[str]:
-        return ["landing", self.name]
+        return [self.catalog_properties.catalog_name, "landing_zone", self.name]
 
     @property
     def iceberg_asset_key(self) -> list[str]:

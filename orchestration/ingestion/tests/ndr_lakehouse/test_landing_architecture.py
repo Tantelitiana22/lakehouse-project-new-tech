@@ -32,40 +32,61 @@ def _source(asset_payload_factory, pagination):
     return parse_asset_config(payload)[0].source_properties
 
 
-def test_pagination_factory_creates_each_strategy(asset_payload_factory):
-    cases = {
-        "offset": {
-            "strategy": "offset",
-            "offset_param": "offset",
-            "limit_param": "limit",
-            "limit_value": 10,
-        },
-        "page_number": {
-            "strategy": "page_number",
-            "page_param": "page",
-            "limit_param": "limit",
-            "limit_value": 10,
-        },
-        "cursor": {
-            "strategy": "cursor",
-            "cursor_param": "cursor",
-            "next_cursor_json_path": "meta.next",
-        },
-        "link_header": {"strategy": "link_header"},
-    }
+@pytest.mark.parametrize(
+    ("strategy", "pagination"),
+    [
+        (
+            "offset",
+            {
+                "strategy": "offset",
+                "offset_param": "offset",
+                "limit_param": "limit",
+                "limit_value": 10,
+            },
+        ),
+        (
+            "page_number",
+            {
+                "strategy": "page_number",
+                "page_param": "page",
+                "limit_param": "limit",
+                "limit_value": 10,
+            },
+        ),
+        (
+            "cursor",
+            {
+                "strategy": "cursor",
+                "cursor_param": "cursor",
+                "next_cursor_json_path": "meta.next",
+            },
+        ),
+        ("link_header", {"strategy": "link_header"}),
+    ],
+)
+def test_pagination_factory_creates_each_strategy(asset_payload_factory, strategy: str, pagination: dict):
+    # Given
     factory = PaginationFactory.default()
-    for strategy, pagination in cases.items():
-        source = _source(asset_payload_factory, pagination)
-        assert factory.create(source.pagination).__class__.__name__.lower().startswith(strategy.split("_")[0])
+    source = _source(asset_payload_factory, pagination)
+
+    # When
+    created = factory.create(source.pagination)
+
+    # Then
+    assert created.__class__.__name__.lower().startswith(strategy.split("_")[0])
 
 
 def test_pagination_factory_rejects_unknown_strategy(asset_payload_factory):
+    # Given
     source = _source(asset_payload_factory, {"strategy": "none"})
+
+    # When / # Then
     with pytest.raises(UnsupportedPaginationStrategyError):
         PaginationFactory.default().create(source.pagination)
 
 
 def test_offset_strategy_builds_next_request(asset_payload_factory):
+    # Given
     source = _source(
         asset_payload_factory,
         {
@@ -76,15 +97,20 @@ def test_offset_strategy_builds_next_request(asset_payload_factory):
         },
     )
     strategy = OffsetPagination(source.pagination)
-    first = strategy.first_request(source)
 
-    assert first.params == {"limit": "2", "offset": "0"}
+    # When
+    first = strategy.first_request(source)
     second = strategy.next_request(first, 1, {}, {}, [{"id": 1}, {"id": 2}])
+    empty_next = strategy.next_request(first, 1, {}, {}, [])
+
+    # Then
+    assert first.params == {"limit": "2", "offset": "0"}
     assert second == PageRequest(url=source.url, params={"limit": "2", "offset": "2"})
-    assert strategy.next_request(first, 1, {}, {}, []) is None
+    assert empty_next is None
 
 
 def test_page_number_strategy_increments_page(asset_payload_factory):
+    # Given
     source = _source(
         asset_payload_factory,
         {
@@ -95,12 +121,18 @@ def test_page_number_strategy_increments_page(asset_payload_factory):
         },
     )
     strategy = PageNumberPagination(source.pagination)
+
+    # When
     first = strategy.first_request(source)
+    second = strategy.next_request(first, 1, {}, {}, [{}] * 5)
+
+    # Then
     assert first.params["page"] == "1"
-    assert strategy.next_request(first, 1, {}, {}, [{}] * 5).params["page"] == "2"
+    assert second.params["page"] == "2"
 
 
 def test_cursor_strategy_stops_without_next_cursor(asset_payload_factory):
+    # Given
     source = _source(
         asset_payload_factory,
         {
@@ -110,17 +142,25 @@ def test_cursor_strategy_stops_without_next_cursor(asset_payload_factory):
         },
     )
     strategy = CursorPagination(source.pagination)
+
+    # When
     first = strategy.first_request(source)
-    assert "cursor" not in first.params
-    assert strategy.next_request(first, 1, {"meta": {}}, {}, [{}]) is None
+    stop_request = strategy.next_request(first, 1, {"meta": {}}, {}, [{}])
     next_request = strategy.next_request(first, 1, {"meta": {"next": "abc"}}, {}, [{}])
+
+    # Then
+    assert "cursor" not in first.params
+    assert stop_request is None
     assert next_request.params["cursor"] == "abc"
 
 
 def test_link_header_strategy_extracts_next_url(asset_payload_factory):
+    # Given
     source = _source(asset_payload_factory, {"strategy": "link_header"})
     strategy = LinkHeaderPagination(source.pagination)
     first = strategy.first_request(source)
+
+    # When
     request = strategy.next_request(
         first,
         1,
@@ -128,27 +168,37 @@ def test_link_header_strategy_extracts_next_url(asset_payload_factory):
         {"Link": '<https://api.test/page2>; rel="next"'},
         [{}],
     )
+
+    # Then
     assert request.url == "https://api.test/page2"
     assert request.params is None
 
 
 def test_retry_policy_respects_retry_after():
+    # Given
     sleeps: list[float] = []
     response = type("Response", (), {"headers": {"Retry-After": "7"}})()
     policy = RetryPolicy(max_seconds=30, sleep=sleeps.append)
 
+    # When
     policy.sleep_for(0, response)
 
+    # Then
     assert sleeps == [7.0]
     assert policy.delay(3) == 4.0
 
 
 def test_extractor_factory_rejects_unknown_source_type():
+    # Given
+    factory = ExtractorFactory()
+
+    # When / # Then
     with pytest.raises(UnsupportedSourceTypeError):
-        ExtractorFactory().create("ftp")
+        factory.create("ftp")
 
 
 def test_provisioning_service_composes_storage_and_namespaces():
+    # Given
     class FakeStore:
         def __init__(self):
             self.ensured = []
@@ -175,6 +225,25 @@ def test_provisioning_service_composes_storage_and_namespaces():
             self.calls.append(("schema", catalog_name, schema_name))
             return True
 
+        def table_exists(self, catalog_name, schema_name, table_name):
+            return False
+
+        def delete_table(self, catalog_name, schema_name, table_name):
+            return False
+
+        def create_table(
+            self,
+            catalog_name,
+            schema_name,
+            table_name,
+            storage_location,
+            columns,
+            comment="",
+            properties=None,
+        ):
+            self.calls.append(("table", catalog_name, schema_name, table_name))
+            return True
+
     store = FakeStore()
     gateway = FakeGateway()
     service = ProvisioningService(
@@ -182,8 +251,10 @@ def test_provisioning_service_composes_storage_and_namespaces():
         namespaces=NamespaceProvisioner(gateway, "s3://lakehouse/warehouse"),
     )
 
+    # When
     result = service.provision("lakehouse", "bronze")
 
+    # Then
     assert result == {
         "buckets": {"landing-zone": True, "lakehouse": True},
         "catalog_created": True,
@@ -196,4 +267,11 @@ def test_provisioning_service_composes_storage_and_namespaces():
 
 
 def test_normalise_date_accepts_datetime():
-    assert normalise_date(datetime(2026, 1, 1, 12, 0)).isoformat() == "2026-01-01"
+    # Given
+    value = datetime(2026, 1, 1, 12, 0)
+
+    # When
+    result = normalise_date(value).isoformat()
+
+    # Then
+    assert result == "2026-01-01"

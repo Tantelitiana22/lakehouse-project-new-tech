@@ -15,8 +15,8 @@ platform:
   unity_catalog:
     base_url: http://unity-catalog:8080
     api_version: "2.1"
-    catalog_name: lakehouse
-    schema_name: bronze
+    catalog_name: real_estate_77
+    schema_name: deduplication_zone
     storage_root: s3://lakehouse/warehouse
 
   spark:

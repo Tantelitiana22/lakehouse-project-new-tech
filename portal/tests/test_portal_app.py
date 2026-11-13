@@ -55,10 +55,11 @@ def _make_test_app():
 
 @pytest.mark.anyio
 async def test_portal_auth_sso_admin_and_bucket_rbac():
+    # Given
     app, engine, s3 = _make_test_app()
     transport = httpx.ASGITransport(app=app)
 
-    # Admin client
+    # When / # Then — Admin client
     async with httpx.AsyncClient(
         transport=transport, base_url="http://portal.localhost:8088", follow_redirects=False
     ) as admin_client:
@@ -245,21 +246,16 @@ async def test_portal_auth_sso_admin_and_bucket_rbac():
 
 @pytest.mark.anyio
 async def test_login_page_and_cross_domain_redirect_after_login():
+    # Given
     app, _engine, _s3 = _make_test_app()
     transport = httpx.ASGITransport(app=app)
+
+    # When
     async with httpx.AsyncClient(
         transport=transport, base_url="http://portal.localhost:8088", follow_redirects=False
     ) as client:
         r_page = await client.get("/login?next=http://uc.localhost:8088/data")
-        assert r_page.status_code == 200
-        assert "http://uc.localhost:8088/data" in r_page.text
-
-        # Open redirect blocked -> falls back to "/"
         r_evil = await client.get("/login?next=https://evil.example.com/")
-        assert r_evil.status_code == 200
-        assert "evil.example.com" not in r_evil.text
-
-        # Login with valid cross-subdomain next -> issues handoff redirect
         r_login = await client.post(
             "/login",
             data={
@@ -268,13 +264,15 @@ async def test_login_page_and_cross_domain_redirect_after_login():
                 "next": "http://uc.localhost:8088/data",
             },
         )
-        assert r_login.status_code == 303
-        assert r_login.headers["location"].startswith("http://uc.localhost:8088/__auth_callback?token=")
-
-        # Invalid handoff callback redirects to portal login
         r_bad_cb = await client.get("/__auth_callback?token=bogus&next=/")
-        assert r_bad_cb.status_code == 303
-        assert r_bad_cb.headers["location"] == "http://portal.localhost:8088/login"
 
-        # create_portal_engine sqlite file url sanity check
-        assert create_portal_engine("sqlite:///:memory:") is not None
+    # Then
+    assert r_page.status_code == 200
+    assert "http://uc.localhost:8088/data" in r_page.text
+    assert r_evil.status_code == 200
+    assert "evil.example.com" not in r_evil.text
+    assert r_login.status_code == 303
+    assert r_login.headers["location"].startswith("http://uc.localhost:8088/__auth_callback?token=")
+    assert r_bad_cb.status_code == 303
+    assert r_bad_cb.headers["location"] == "http://portal.localhost:8088/login"
+    assert create_portal_engine("sqlite:///:memory:") is not None

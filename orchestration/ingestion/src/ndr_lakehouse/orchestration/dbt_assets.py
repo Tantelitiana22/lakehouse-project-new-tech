@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +58,11 @@ def _dagster_asset_key(node: _ManifestNode) -> AssetKey | None:
     return None
 
 
-def _index_manifest(manifest: dict[str, Any]) -> dict[str, AssetKey]:
+def _index_manifest(
+    manifest: dict[str, Any],
+    *,
+    catalog_name: str | None = None,
+) -> dict[str, AssetKey]:
     """Map every source/model unique_id to the Dagster key it represents."""
 
     index: dict[str, AssetKey] = {}
@@ -70,7 +74,14 @@ def _index_manifest(manifest: dict[str, Any]) -> dict[str, AssetKey]:
 
     for unique_id, node in (manifest.get("nodes") or {}).items():
         if node.get("resource_type") == "model":
-            index[unique_id] = _dagster_asset_key(node) or AssetKey([node["name"]])
+            explicit = _dagster_asset_key(node)
+            if explicit is not None:
+                index[unique_id] = explicit
+            elif catalog_name:
+                schema_name = str(node.get("schema") or "gold")
+                index[unique_id] = AssetKey([catalog_name, schema_name, node["name"]])
+            else:
+                index[unique_id] = AssetKey([node["name"]])
 
     return index
 
@@ -96,20 +107,36 @@ def _build_model_asset(
     index: dict[str, AssetKey],
     project_dir: Path,
     resource_key: str,
+    catalog_name: str | None = None,
+    on_model_materialized: Callable[[str, str], Any] | None = None,
 ) -> AssetsDefinition:
     """Build one Dagster asset that materialises a single dbt model."""
 
     model_name: str = node["name"]
+    schema_name: str = str(node.get("schema") or "gold")
     asset_key = index[node["unique_id"]]
+    key_prefix = list(asset_key.path[:-1]) or None
     upstream = [index[dep] for dep in (node.get("depends_on") or {}).get("nodes", ()) if dep in index]
+    group_name = schema_name if catalog_name else "dbt"
+    tags = (
+        {
+            "catalog": catalog_name,
+            "zone": schema_name,
+            "layer": schema_name,
+            "dbt_model": model_name,
+        }
+        if catalog_name
+        else {"layer": "dbt", "dbt_model": model_name}
+    )
 
     @asset(
-        name=asset_key.to_user_string(),
+        name=asset_key.path[-1],
+        key_prefix=key_prefix,
         deps=upstream or None,
-        group_name="dbt",
+        group_name=group_name,
         compute_kind="dbt",
         description=node.get("description") or f"dbt model {model_name}",
-        tags={"layer": "dbt", "dbt_model": model_name},
+        tags=tags,
         required_resource_keys={resource_key},
     )
     # `context` is deliberately left unannotated, like every other asset in this
@@ -129,6 +156,8 @@ def _build_model_asset(
         )
         if result.returncode != 0:
             raise DbtCommandError(f"dbt run --select {model_name} failed ({result.returncode})")
+        if on_model_materialized is not None:
+            on_model_materialized(schema_name, model_name)
         return MaterializeResult()
 
     return _dbt_model_asset
@@ -140,6 +169,8 @@ def build_dbt_assets(
     *,
     model_names: Sequence[str] | None = None,
     resource_key: str = DEFAULT_DBT_RESOURCE,
+    catalog_name: str | None = None,
+    on_model_materialized: Callable[[str, str], Any] | None = None,
 ) -> list[AssetsDefinition]:
     """Build one Dagster asset per dbt model, from the compiled manifest.
 
@@ -161,10 +192,17 @@ def build_dbt_assets(
         return []
 
     manifest = json.loads(resolved_manifest.read_text(encoding="utf-8"))
-    index = _index_manifest(manifest)
+    index = _index_manifest(manifest, catalog_name=catalog_name)
 
     assets = [
-        _build_model_asset(node, index=index, project_dir=resolved_project, resource_key=resource_key)
+        _build_model_asset(
+            node,
+            index=index,
+            project_dir=resolved_project,
+            resource_key=resource_key,
+            catalog_name=catalog_name,
+            on_model_materialized=on_model_materialized,
+        )
         for node in _iter_models(manifest, model_names)
     ]
     logger.info("Registered %d dbt assets from %s", len(assets), resolved_manifest)
@@ -177,6 +215,7 @@ def build_metricflow_asset(
     dbt_project_dir: Path,
     metric: str,
     resource_key: str = DEFAULT_DBT_RESOURCE,
+    catalog_name: str | None = None,
 ) -> AssetsDefinition:
     """Build the Semantic Layer validation asset for one use case's Gold models.
 
@@ -187,7 +226,11 @@ def build_metricflow_asset(
     """
 
     project_dir = Path(dbt_project_dir)
-    deps = [AssetKey(name) for name in gold_models]
+    deps = [AssetKey([catalog_name, "gold", name]) if catalog_name else AssetKey(name) for name in gold_models]
+    tags: dict[str, str] = {"layer": "semantic", "owner": "data-platform"}
+    if catalog_name:
+        tags["catalog"] = catalog_name
+        tags["zone"] = "semantic"
 
     @asset(
         name="metricflow_semantic_validation",
@@ -198,7 +241,7 @@ def build_metricflow_asset(
             "Compile the Semantic Layer semantic graph (entities, dimensions, simple metrics "
             f"and the {metric} ratio metric) after Gold models are materialised."
         ),
-        tags={"layer": "semantic", "owner": "data-platform"},
+        tags=tags,
         required_resource_keys={resource_key},
     )
     def metricflow_semantic_validation(context) -> dict[str, Any]:

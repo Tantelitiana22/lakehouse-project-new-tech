@@ -1,7 +1,7 @@
 {{ config(materialized='table', schema='gold', file_format='delta', tags=['gold', 'fact']) }}
 
 WITH SOURCE AS (
-    SELECT * FROM {{ source('bronze', 'dvf_mutations_77') }}
+    SELECT * FROM {{ source('deduplication_zone', 'dvf_mutations_77') }}
 ),
 
 DEDUPLICATED AS (

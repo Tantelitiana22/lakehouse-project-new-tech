@@ -7,7 +7,7 @@ directly. Concrete adapters live in ``ndr_lakehouse.infrastructure`` and
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
@@ -99,6 +99,21 @@ class CatalogGateway(Protocol):
         catalog_name: str,
         schema_name: str,
         comment: str,
+    ) -> bool: ...
+
+    def table_exists(self, catalog_name: str, schema_name: str, table_name: str) -> bool: ...
+
+    def delete_table(self, catalog_name: str, schema_name: str, table_name: str) -> bool: ...
+
+    def create_table(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        table_name: str,
+        storage_location: str,
+        columns: Sequence[Mapping[str, Any]],
+        comment: str = "",
+        properties: Mapping[str, str] | None = None,
     ) -> bool: ...
 
 

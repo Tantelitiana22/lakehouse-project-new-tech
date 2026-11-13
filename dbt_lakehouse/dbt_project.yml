@@ -15,7 +15,7 @@ clean-targets:
   - dbt_packages
 
 on-run-start:
-  - "{{ ensure_schema('bronze') }}"
+  - "{{ ensure_schema('deduplication_zone') }}"
   - "{{ ensure_schema('gold') }}"
 
 models:

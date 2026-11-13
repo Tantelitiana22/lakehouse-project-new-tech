@@ -10,11 +10,12 @@ assets:
     description: >-
       Commune referential for department 77 from the French government Geo API.
       Loaded as a single native JSON payload.
-    group_name: bronze
+    group_name: deduplication_zone
     owner: data-platform
     tags:
       domain: geo
-      layer: bronze
+      source: communes_geo_77
+      zone: deduplication_zone
       department: "77"
     source_properties:
       type: http
@@ -29,12 +30,12 @@ assets:
         User-Agent: lakehouse-ingestion/1.0
       native_format: json
       landing_bucket: landing-zone
-      s3_prefix: raw/geo/communes_77
+      s3_prefix: real_estate_77/landing_zone/communes_geo_77
       pagination:
         strategy: none
     catalog_properties:
-      catalog_name: lakehouse
-      schema_name: bronze
+      catalog_name: real_estate_77
+      schema_name: deduplication_zone
       table_name: communes_geo_77
       write_mode: overwrite
       primary_keys:
@@ -55,11 +56,12 @@ assets:
     description: >-
       DVF (Demandes de Valeurs Foncieres) mutation-level CSV.GZ for department
       77. The compressed payload is preserved byte-for-byte in the landing zone.
-    group_name: bronze
+    group_name: deduplication_zone
     owner: data-platform
     tags:
       domain: real-estate
-      layer: bronze
+      source: dvf_mutations_77
+      zone: deduplication_zone
       department: "77"
     source_properties:
       type: http
@@ -70,12 +72,12 @@ assets:
         User-Agent: lakehouse-ingestion/1.0
       native_format: csv.gz
       landing_bucket: landing-zone
-      s3_prefix: raw/dvf/mutations_77
+      s3_prefix: real_estate_77/landing_zone/dvf_mutations_77
       pagination:
         strategy: none
     catalog_properties:
-      catalog_name: lakehouse
-      schema_name: bronze
+      catalog_name: real_estate_77
+      schema_name: deduplication_zone
       table_name: dvf_mutations_77
       write_mode: append
       primary_keys:
@@ -100,11 +102,12 @@ assets:
       Lot-level DVF feed for department 77. Demonstrates the generic offset
       pagination strategy: every native page is persisted as part_00001.json,
       part_00002.json, ... before the Iceberg MERGE upsert.
-    group_name: bronze
+    group_name: deduplication_zone
     owner: data-platform
     tags:
       domain: real-estate
-      layer: bronze
+      source: dvf_lots_batis_77
+      zone: deduplication_zone
       department: "77"
     source_properties:
       type: http
@@ -118,7 +121,7 @@ assets:
         User-Agent: lakehouse-ingestion/1.0
       native_format: json
       landing_bucket: landing-zone
-      s3_prefix: raw/dvf/lots_batis_77
+      s3_prefix: real_estate_77/landing_zone/dvf_lots_batis_77
       records_json_path: mutations
       pagination:
         strategy: offset
@@ -130,8 +133,8 @@ assets:
         max_pages: 50
         rate_limit_sleep_sec: 0.2
     catalog_properties:
-      catalog_name: lakehouse
-      schema_name: bronze
+      catalog_name: real_estate_77
+      schema_name: deduplication_zone
       table_name: dvf_lots_batis_77
       write_mode: merge
       primary_keys:

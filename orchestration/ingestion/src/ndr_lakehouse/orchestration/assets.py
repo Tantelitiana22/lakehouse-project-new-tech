@@ -1,9 +1,9 @@
 """Dynamic Dagster assets built from asset_property YAML.
 
-Each source produces exactly two linked assets:
+Each source produces two linked assets:
 
-* ``AssetKey(["landing", <name>])``             -> native RustFS landing zone
-* ``AssetKey([catalog, schema, table])``        -> Unity Catalog Iceberg table
+* ``AssetKey([catalog, "landing_zone", <name>])`` -> native RustFS landing zone
+* ``AssetKey([catalog, schema, table])``          -> Unity Catalog Delta/UniForm table
 """
 
 from __future__ import annotations
@@ -147,14 +147,23 @@ def _landing_asset(config: AssetConfig) -> AssetsDefinition:
     landing_key = AssetKey(config.landing_asset_key)
     handler = _resolve_asset_handler(config)
     settings = _handler_settings(config)
+    catalog = config.catalog_properties
 
     common: dict[str, Any] = {
         "name": config.name,
-        "key_prefix": ["landing"],
-        "group_name": "landing",
+        "key_prefix": [catalog.catalog_name, "landing_zone"],
+        "group_name": "landing_zone",
         "compute_kind": "python",
         "description": config.description or f"Native landing asset for {config.name}",
-        "tags": {**config.tags, "owner": config.owner, "layer": "landing"},
+        "tags": {
+            **config.tags,
+            "owner": config.owner,
+            "catalog": catalog.catalog_name,
+            "source": config.name,
+            "zone": "landing_zone",
+            "layer": "landing_zone",
+            "format": config.source_properties.native_format,
+        },
     }
 
     # Same predicate as `_resolve_asset_handler`: an empty or whitespace-only
@@ -247,10 +256,13 @@ def _iceberg_asset(config: AssetConfig, landing_key: AssetKey) -> AssetsDefiniti
         "ins": {"landing_uri": AssetIn(key=landing_key)},
         "group_name": config.group_name,
         "compute_kind": "spark",
-        "description": config.description or f"Iceberg Bronze table {catalog.full_table_name}",
+        "description": config.description or f"Unity Catalog table {catalog.full_table_name}",
         "tags": {
             **config.tags,
             "owner": config.owner,
+            "catalog": catalog.catalog_name,
+            "source": config.name,
+            "zone": catalog.schema_name,
             "layer": config.group_name,
             "write_mode": catalog.write_mode,
         },

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from dagster import ConfigurableResource
 
 from ndr_lakehouse.infrastructure.object_store import Boto3ObjectStore
 from ndr_lakehouse.infrastructure.unity_catalog import UnityCatalogRestClient
 from ndr_lakehouse.provisioning.buckets import BucketProvisioner
 from ndr_lakehouse.provisioning.service import ProvisioningService
+from ndr_lakehouse.provisioning.uc_columns import columns_from_delta_schema_json
 from ndr_lakehouse.provisioning.unity_catalog import NamespaceProvisioner
 
 
@@ -102,3 +106,58 @@ class UnityCatalogProvisionerResource(ConfigurableResource):
             return service.provision(catalog_name, schema_name)
         finally:
             client.close()
+
+    def ensure_table(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        table_name: str,
+        storage_location: str,
+        columns: Sequence[Mapping[str, Any]],
+        comment: str = "",
+        properties: Mapping[str, str] | None = None,
+    ) -> bool:
+        client = self._catalog_client()
+        try:
+            return NamespaceProvisioner(
+                gateway=client,
+                storage_root=self.uc_storage_root,
+            ).ensure_table(
+                catalog_name=catalog_name,
+                schema_name=schema_name,
+                table_name=table_name,
+                storage_location=storage_location,
+                columns=columns,
+                comment=comment,
+                properties=properties,
+            )
+        finally:
+            client.close()
+
+    def register_delta_table_from_storage(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        table_name: str,
+        comment: str = "",
+    ) -> bool:
+        """Read a Delta table's schema from RustFS and register it in Unity Catalog."""
+
+        root = self.uc_storage_root.rstrip("/")
+        storage_location = f"{root}/{schema_name}.db/{table_name}"
+        stripped = storage_location.removeprefix("s3://")
+        bucket, _, table_prefix = stripped.partition("/")
+        schema_json = self._object_store().read_delta_schema_json(bucket, table_prefix)
+        if not schema_json:
+            return False
+        columns = columns_from_delta_schema_json(schema_json)
+        if not columns:
+            return False
+        return self.ensure_table(
+            catalog_name=catalog_name,
+            schema_name=schema_name,
+            table_name=table_name,
+            storage_location=storage_location,
+            columns=columns,
+            comment=comment,
+        )

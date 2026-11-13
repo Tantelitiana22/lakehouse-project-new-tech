@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import xml.etree.ElementTree as ET
+from functools import singledispatch
 from urllib.parse import urlparse
 
 import boto3
@@ -43,6 +44,31 @@ def _make_proxy_app(engine, s3_service):
     )
 
 
+@singledispatch
+def _decode_header_value(value: object) -> str:
+    return str(value)
+
+
+@_decode_header_value.register
+def _(value: bytes) -> str:
+    return value.decode("utf-8")
+
+
+@singledispatch
+def _read_request_body(_body: object) -> bytes:
+    return b""
+
+
+@_read_request_body.register
+def _(body: bytes) -> bytes:
+    return body
+
+
+@_read_request_body.register
+def _(body: io.IOBase) -> bytes:
+    return bytes(body.read() or b"")
+
+
 def _sign_request(
     method: str,
     url: str,
@@ -54,11 +80,12 @@ def _sign_request(
 ) -> tuple[str, dict[str, str]]:
     aws_req = AWSRequest(method=method, url=url, data=body)
     creds = Credentials(access_key, secret_key)
-    signer = (
-        S3SigV4QueryAuth(creds, "s3", "us-east-1", expires=60) if query_auth else S3SigV4Auth(creds, "s3", "us-east-1")
-    )
+    signer = {
+        True: lambda: S3SigV4QueryAuth(creds, "s3", "us-east-1", expires=60),
+        False: lambda: S3SigV4Auth(creds, "s3", "us-east-1"),
+    }[query_auth]()
     signer.add_auth(aws_req)
-    return aws_req.url, {k: v.decode("utf-8") if isinstance(v, bytes) else v for k, v in aws_req.headers.items()}
+    return aws_req.url, {k: _decode_header_value(v) for k, v in aws_req.headers.items()}
 
 
 def _make_boto3_client(app, access_key: str, secret_key: str):
@@ -84,12 +111,11 @@ def _make_boto3_client(app, access_key: str, secret_key: str):
 
     def _custom_send(request, **kwargs):
         parsed = urlparse(request.url)
-        path = "/s3" + (parsed.path if parsed.path.startswith("/") else "/" + parsed.path)
-        if parsed.query:
-            path = f"{path}?{parsed.query}"
-        headers = {k: v.decode("utf-8") if isinstance(v, bytes) else v for k, v in request.headers.items()}
-        raw_body = request.body
-        body_bytes = raw_body.read() if hasattr(raw_body, "read") else (raw_body or b"")
+        normalized_path = "/" + parsed.path.lstrip("/")
+        base_path = f"/s3{normalized_path}"
+        path = (parsed.query and f"{base_path}?{parsed.query}") or base_path
+        headers = {k: _decode_header_value(v) for k, v in request.headers.items()}
+        body_bytes = _read_request_body(request.body)
         resp = asyncio.run(_send_async(request.method, path, headers, body_bytes))
         return AWSResponse(request.url, resp.status_code, resp.headers, _RawBytes(resp.content))
 
@@ -99,6 +125,7 @@ def _make_boto3_client(app, access_key: str, secret_key: str):
 
 @pytest.mark.anyio
 async def test_s3_proxy_auth_failures_and_bucket_scoping():
+    # Given
     engine = create_portal_engine("sqlite:///:memory:")
     init_db(engine, "admin", "adminpass")
     s3 = InMemoryS3Service(["lakehouse", "landing-zone", "secret-bucket"])
@@ -118,6 +145,8 @@ async def test_s3_proxy_auth_failures_and_bucket_scoping():
 
     app = _make_proxy_app(engine, s3)
     transport = httpx.ASGITransport(app=app)
+
+    # When / # Then
     async with httpx.AsyncClient(transport=transport, base_url="http://s3.localhost:8088") as client:
         # 1. Missing auth
         r_no_auth = await client.get("/s3/")
@@ -271,6 +300,7 @@ async def test_s3_proxy_auth_failures_and_bucket_scoping():
 
 
 def test_real_boto3_client_against_s3_proxy():
+    # Given
     engine = create_portal_engine("sqlite:///:memory:")
     init_db(engine, "admin", "adminpass")
     s3 = InMemoryS3Service(["lakehouse", "landing-zone", "private"])
@@ -285,18 +315,19 @@ def test_real_boto3_client_against_s3_proxy():
     app = _make_proxy_app(engine, s3)
     boto = _make_boto3_client(app, bob_key.access_key_id, bob_key.secret_access_key)
 
+    # When
     buckets = [b["Name"] for b in boto.list_buckets()["Buckets"]]
-    assert buckets == ["lakehouse", "landing-zone"]
-
     objs = [o["Key"] for o in boto.list_objects_v2(Bucket="lakehouse", Prefix="gold/")["Contents"]]
-    assert objs == ["gold/kpi.parquet"]
-
-    assert boto.get_object(Bucket="lakehouse", Key="gold/kpi.parquet")["Body"].read() == b"PAR1"
-
+    fetched = boto.get_object(Bucket="lakehouse", Key="gold/kpi.parquet")["Body"].read()
     boto.put_object(Bucket="landing-zone", Key="raw/item.json", Body=b'{"ok":true}')
-    assert s3.get_object("landing-zone", "raw/item.json")[0] == b'{"ok":true}'
-
+    uploaded_obj = s3.get_object("landing-zone", "raw/item.json")[0]
     boto.delete_objects(Bucket="landing-zone", Delete={"Objects": [{"Key": "raw/item.json"}]})
+
+    # Then
+    assert buckets == ["lakehouse", "landing-zone"]
+    assert objs == ["gold/kpi.parquet"]
+    assert fetched == b"PAR1"
+    assert uploaded_obj == b'{"ok":true}'
     with pytest.raises(ClientError) as exc_ro:
         boto.put_object(Bucket="lakehouse", Key="gold/forbidden.txt", Body=b"x")
     assert exc_ro.value.response["Error"]["Code"] == "AccessDenied"

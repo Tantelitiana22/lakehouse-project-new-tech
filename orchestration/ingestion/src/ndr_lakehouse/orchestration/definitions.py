@@ -21,6 +21,7 @@ from ndr_lakehouse.orchestration.schedules import (
     load_schedule_specs,
     validate_schedule_targets,
 )
+from ndr_lakehouse.provisioning.resource import UnityCatalogProvisionerResource
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +76,22 @@ def build_definitions(
     # graph in agreement, so a half-configured dbt never yields assets whose
     # upstream resources are missing (or a semantic asset with phantom deps).
     if "dbt" in resources:
+        provisioner = resources["uc_provisioner"]
+        assert isinstance(provisioner, UnityCatalogProvisionerResource)
+
+        def _register_gold_table(schema_name: str, model_name: str) -> None:
+            provisioner.register_delta_table_from_storage(
+                catalog_name=config.name,
+                schema_name=schema_name,
+                table_name=model_name,
+            )
+
         dbt_assets = build_dbt_assets(
             manifest_path=config.dbt_manifest_path,
             project_dir=config.dbt_project_path,
             model_names=config.gold_models,
+            catalog_name=config.name,
+            on_model_materialized=_register_gold_table,
         )
         if dbt_assets:
             assets = [
@@ -88,6 +101,7 @@ def build_definitions(
                     gold_models=config.gold_models,
                     dbt_project_dir=config.dbt_project_path,
                     metric=config.semantic_metric,
+                    catalog_name=config.name,
                 ),
             ]
 

@@ -81,9 +81,9 @@ def asset_payload() -> dict[str, Any]:
             {
                 "name": "demo_source",
                 "description": "Generic demo source used by the unit suite",
-                "group_name": "bronze",
+                "group_name": "deduplication_zone",
                 "owner": "data-platform",
-                "tags": {"domain": "test", "layer": "bronze"},
+                "tags": {"domain": "test", "zone": "deduplication_zone"},
                 "source_properties": {
                     "type": "http",
                     "url": "https://api.example.test/records",
@@ -99,7 +99,7 @@ def asset_payload() -> dict[str, Any]:
                 },
                 "catalog_properties": {
                     "catalog_name": "lakehouse",
-                    "schema_name": "bronze",
+                    "schema_name": "deduplication_zone",
                     "table_name": "demo_table",
                     "write_mode": "overwrite",
                     "primary_keys": ["id"],

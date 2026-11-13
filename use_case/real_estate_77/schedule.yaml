@@ -9,10 +9,10 @@
 # ---------------------------------------------------------------------------
 schedules:
   - name: daily_lakehouse_refresh
-    description: Landing -> Bronze -> dbt Gold -> semantic validation
+    description: Landing -> Deduplication -> dbt Gold -> semantic validation
     cron: "0 6 * * *"          # 06:00 every day
     timezone: Europe/Paris
     enabled: true
     # No `selection` means every asset in dependency order. Narrow it with:
     # selection:
-    #   groups: [landing, bronze, dbt, semantic]
+    #   groups: [landing_zone, deduplication_zone, gold, semantic]

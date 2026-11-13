@@ -17,86 +17,139 @@ from ndr_lakehouse.domain.errors import AmbiguousDefaultUseCaseError, UseCaseNot
 
 
 def test_manifest_paths_resolve_against_manifest_directory(tmp_path, write_use_case):
+    # Given
     manifest = write_use_case("demo")
+
+    # When
     config = load_use_case_config(manifest)
+
+    # Then
     assert config.assets_path == (tmp_path / "demo" / "assets").resolve()
     assert config.platform_path == (tmp_path / "demo" / "assets" / "platform.yaml").resolve()
 
 
 def test_dbt_sources_path_resolves_against_dbt_project_dir(tmp_path, write_use_case):
+    # Given
     manifest = write_use_case("demo")
+    project = tmp_path / "demo" / "dbt_project"
+    expected = (project / "models" / "staging" / "_sources.yml").resolve()
+
+    # When
     config = load_use_case_config(manifest)
+
+    # Then
     # dbt_project_dir is manifest-relative, dbt_sources_path is dbt_project_dir-
     # relative. The fixture keeps both inside tmp_path, so this asserts the
     # asymmetry without reaching into the repository.
-    project = tmp_path / "demo" / "dbt_project"
-    expected = (project / "models" / "staging" / "_sources.yml").resolve()
     assert config.dbt_sources_file == expected
 
 
 def test_default_use_case_is_selected(tmp_path, write_use_case):
+    # Given
     write_use_case("one")
     write_use_case("two", default=True)
-    assert resolve_use_case(tmp_path).name == "two"
+
+    # When
+    selected = resolve_use_case(tmp_path)
+
+    # Then
+    assert selected.name == "two"
 
 
 def test_two_default_use_cases_are_rejected(tmp_path, write_use_case):
+    # Given
     write_use_case("one", default=True)
     write_use_case("two", default=True)
+
+    # When / # Then
     with pytest.raises(AmbiguousDefaultUseCaseError, match="one.*two|two.*one"):
         resolve_use_case(tmp_path)
 
 
 def test_unknown_use_case_name_lists_available(tmp_path, write_use_case):
+    # Given
     write_use_case("one")
+
+    # When / # Then
     with pytest.raises(UseCaseNotFoundError, match="one"):
         resolve_use_case(tmp_path, "nope")
 
 
 def test_no_default_use_case_lists_available(tmp_path, write_use_case):
+    # Given
     write_use_case("one")
     write_use_case("two")
+
+    # When / # Then
     with pytest.raises(UseCaseNotFoundError, match="one, two"):
         resolve_use_case(tmp_path)
 
 
 def test_empty_root_reports_no_available_use_cases(tmp_path):
+    # Given
+    empty_root = tmp_path
+
+    # When / # Then
     with pytest.raises(UseCaseNotFoundError, match="available: none"):
-        resolve_use_case(tmp_path)
+        resolve_use_case(empty_root)
 
 
 def test_unknown_manifest_keys_are_rejected(tmp_path, write_use_case):
+    # Given
     manifest = write_use_case("demo")
     manifest.write_text(manifest.read_text(encoding="utf-8") + "  bogus_key: 1\n", encoding="utf-8")
+
+    # When / # Then
     with pytest.raises(ValidationError):
         load_use_case_config(manifest)
 
 
 def test_discover_returns_every_manifest_sorted(tmp_path, write_use_case):
+    # Given
     write_use_case("beta")
     write_use_case("alpha")
-    assert [c.name for c in discover_use_case_configs(tmp_path)] == ["alpha", "beta"]
+
+    # When
+    names = [c.name for c in discover_use_case_configs(tmp_path)]
+
+    # Then
+    assert names == ["alpha", "beta"]
 
 
 def test_schedule_path_defaults_to_schedule_yaml_next_to_the_manifest(tmp_path, write_use_case):
+    # Given
     manifest = write_use_case("demo")
+
+    # When
     config = load_use_case_config(manifest)
+
+    # Then
     assert config.schedule_path == (tmp_path / "demo" / "schedule.yaml").resolve()
 
 
 def test_schedule_file_is_manifest_relative(tmp_path, write_use_case):
+    # Given
     manifest = write_use_case("demo")
     manifest.write_text(
         manifest.read_text(encoding="utf-8") + "  schedule_file: configs/cron.yaml\n",
         encoding="utf-8",
     )
+
+    # When
     config = load_use_case_config(manifest)
+
+    # Then
     assert config.schedule_path == (tmp_path / "demo" / "configs" / "cron.yaml").resolve()
 
 
 def test_dvf_lots_batis_77_uses_section_prefixee_endpoint():
+    # Given
     assets_file = Path(__file__).resolve().parents[4] / "use_case" / "real_estate_77" / "assets" / "dvf_and_geo_77.yaml"
+
+    # When
     configs = {cfg.name: cfg for cfg in load_asset_config_file(assets_file)}
     lots_batis = configs["dvf_lots_batis_77"]
+
+    # Then
     assert lots_batis.source_properties.url == "https://app.dvf.etalab.gouv.fr/api/mutations3/77001/0000A"
     assert lots_batis.source_properties.pagination.limit_value == 200

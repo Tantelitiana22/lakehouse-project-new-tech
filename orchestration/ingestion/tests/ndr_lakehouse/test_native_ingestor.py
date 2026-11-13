@@ -43,13 +43,10 @@ def _patch_http(mocker, responses):
     return client
 
 
-def _config(asset_payload_factory, pagination, *, records_path=None):
-    source_overrides = {}
-    if records_path:
-        source_overrides["records_json_path"] = records_path
+def _config(asset_payload_factory, pagination, *, records_path: str = "records"):
     payload = asset_payload_factory(
         pagination=pagination,
-        source_overrides=source_overrides,
+        source_overrides={"records_json_path": records_path},
         catalog_overrides={"write_mode": "overwrite"},
     )
     return parse_asset_config(payload)[0]
@@ -59,20 +56,45 @@ def _keys(mock_s3):
     return [call.kwargs["Key"] for call in mock_s3.put_object.call_args_list]
 
 
-def test_parse_link_header_rfc5988():
-    header = '<https://api.test/records?page=2>; rel="next", ' '<https://api.test/records?page=9>; rel="last"'
-    assert parse_link_header(header) == "https://api.test/records?page=2"
-    assert parse_link_header(None) is None
-    assert parse_link_header('<https://api.test/records?page=1>; rel="prev"') is None
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        (
+            '<https://api.test/records?page=2>; rel="next", <https://api.test/records?page=9>; rel="last"',
+            "https://api.test/records?page=2",
+        ),
+        (None, None),
+        ('<https://api.test/records?page=1>; rel="prev"', None),
+    ],
+)
+def test_parse_link_header_rfc5988(header: str | None, expected: str | None):
+    # Given / # When
+    next_link = parse_link_header(header)
+
+    # Then
+    assert next_link == expected
 
 
-def test_dig_json_path_supports_dots_and_indexes():
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("data.items.1.id", 2),
+        ("missing.path", None),
+    ],
+)
+def test_dig_json_path_supports_dots_and_indexes(path: str, expected: int | None):
+    # Given
     payload = {"data": {"items": [{"id": 1}, {"id": 2}]}}
-    assert dig_json_path(payload, "data.items.1.id") == 2
-    assert dig_json_path(payload, "missing.path") is None
+
+    # When
+    value = dig_json_path(payload, path)
+
+    # Then
+    assert value == expected
 
 
 def test_offset_pagination_writes_part_files(mocker, mock_s3, asset_payload_factory, ingest_date):
+    # Given
     config = _config(
         asset_payload_factory,
         {
@@ -92,8 +114,10 @@ def test_offset_pagination_writes_part_files(mocker, mock_s3, asset_payload_fact
         ],
     )
 
+    # When
     uri = _resource().ingest(config, ingest_date=ingest_date)
 
+    # Then
     assert uri == "s3a://landing-zone/raw/demo/ingest_date=2026-01-01"
     assert client.request.call_count == 2
     assert client.request.call_args_list[0].kwargs["params"]["offset"] == "0"
@@ -105,6 +129,7 @@ def test_offset_pagination_writes_part_files(mocker, mock_s3, asset_payload_fact
 
 
 def test_cursor_pagination_follows_next_cursor(mocker, mock_s3, asset_payload_factory, ingest_date):
+    # Given
     config = _config(
         asset_payload_factory,
         {
@@ -129,8 +154,10 @@ def test_cursor_pagination_follows_next_cursor(mocker, mock_s3, asset_payload_fa
         ],
     )
 
+    # When
     _resource().ingest(config, ingest_date=ingest_date)
 
+    # Then
     assert client.request.call_count == 2
     assert "cursor" not in client.request.call_args_list[0].kwargs["params"]
     assert client.request.call_args_list[1].kwargs["params"]["cursor"] == "cursor-2"
@@ -141,6 +168,7 @@ def test_cursor_pagination_follows_next_cursor(mocker, mock_s3, asset_payload_fa
 
 
 def test_link_header_pagination_follows_next_link(mocker, mock_s3, asset_payload_factory, ingest_date):
+    # Given
     config = _config(
         asset_payload_factory,
         {"strategy": "link_header", "records_json_path": "records"},
@@ -158,14 +186,17 @@ def test_link_header_pagination_follows_next_link(mocker, mock_s3, asset_payload
         ],
     )
 
+    # When
     _resource().ingest(config, ingest_date=ingest_date)
 
+    # Then
     assert client.request.call_count == 2
     assert client.request.call_args_list[1].args[1] == "https://api.example.test/records?page=2"
     assert len(_keys(mock_s3)) == 2
 
 
 def test_429_triggers_exponential_backoff(mocker, mock_s3, asset_payload_factory, ingest_date):
+    # Given
     config = _config(
         asset_payload_factory,
         {
@@ -186,14 +217,17 @@ def test_429_triggers_exponential_backoff(mocker, mock_s3, asset_payload_factory
     )
     sleep = mocker.patch("time.sleep")
 
+    # When
     _resource().ingest(config, ingest_date=ingest_date)
 
+    # Then
     assert sleep.call_count == 1
     assert sleep.call_args.args[0] == pytest.approx(0.1)
     assert len(_keys(mock_s3)) == 1
 
 
 def test_pagination_stops_at_max_pages(mocker, mock_s3, asset_payload_factory, ingest_date):
+    # Given
     config = _config(
         asset_payload_factory,
         {
@@ -215,12 +249,15 @@ def test_pagination_stops_at_max_pages(mocker, mock_s3, asset_payload_factory, i
         ],
     )
 
+    # When
     _resource().ingest(config, ingest_date=ingest_date)
 
+    # Then
     assert len(_keys(mock_s3)) == 2
 
 
 def test_single_stream_preserves_native_csv_gz_bytes(mocker, mock_s3, asset_payload_factory, ingest_date):
+    # Given
     payload = asset_payload_factory(
         source_overrides={
             "url": "https://api.example.test/data.csv.gz",
@@ -243,8 +280,10 @@ def test_single_stream_preserves_native_csv_gz_bytes(mocker, mock_s3, asset_payl
     client.stream.return_value = context_manager
     mocker.patch("httpx.Client", return_value=client)
 
+    # When
     _resource().ingest(config, ingest_date=ingest_date)
 
+    # Then
     mock_s3.put_object.assert_called_once()
     call = mock_s3.put_object.call_args.kwargs
     assert call["Key"] == "raw/demo/ingest_date=2026-01-01/data.csv.gz"
@@ -253,6 +292,7 @@ def test_single_stream_preserves_native_csv_gz_bytes(mocker, mock_s3, asset_payl
 
 
 def test_s3_source_is_copied_without_content_transformation(mock_s3, asset_payload_factory, ingest_date):
+    # Given
     payload = asset_payload_factory(
         source_overrides={
             "type": "s3",
@@ -264,8 +304,10 @@ def test_s3_source_is_copied_without_content_transformation(mock_s3, asset_paylo
     )
     config = parse_asset_config(payload)[0]
 
+    # When
     uri = _resource().ingest(config, ingest_date=ingest_date)
 
+    # Then
     assert uri == "s3a://landing-zone/raw/demo/ingest_date=2026-01-01"
     mock_s3.copy_object.assert_called_once_with(
         Bucket="landing-zone",
@@ -275,6 +317,7 @@ def test_s3_source_is_copied_without_content_transformation(mock_s3, asset_paylo
 
 
 def test_next_url_pagination_follows_payload_link(mocker, mock_s3, asset_payload_factory, ingest_date):
+    # Given
     config = _config(
         asset_payload_factory,
         {
@@ -295,7 +338,9 @@ def test_next_url_pagination_follows_payload_link(mocker, mock_s3, asset_payload
         ],
     )
 
+    # When
     _resource().ingest(config, ingest_date=ingest_date)
 
+    # Then
     assert client.request.call_count == 2
     assert client.request.call_args_list[1].args[1] == "https://api.example.test/records?page=2"

@@ -26,14 +26,23 @@ class _Stub:
 
 
 def test_handler_context_is_frozen(sample_asset_config):
+    # Given
     stub = _Stub()
     ctx = HandlerContext(landing=stub, iceberg=stub, settings={"a": "b"})
+
+    # When / # Then
     with pytest.raises(FrozenInstanceError):
         ctx.settings = {}
     assert ctx.landing.ingest(sample_asset_config) == "s3a://landing/x"
 
 
 def test_handler_protocol_declares_land_and_load():
+    # Given
+    expected_members = {"land", "load"}
+
+    # When
     # ``__protocol_attrs__`` is 3.12+, so assert on the declared members instead.
     members = set(dir(UseCaseHandler))
-    assert {"land", "load"} <= members
+
+    # Then
+    assert expected_members <= members

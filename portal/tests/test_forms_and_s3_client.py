@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import httpx
 import pytest
 from botocore.exceptions import ClientError
@@ -17,39 +15,53 @@ from lakehouse_portal.s3_client import Boto3S3Service, InMemoryS3Service, S3Stor
 
 
 def test_session_and_handoff_tokens():
+    # Given
     secret = "super-secret"
+
+    # When
     token = create_session_token(42, "alice", secret, ttl_seconds=60, purpose="session")
     payload = verify_session_token(token, secret, expected_purpose="session")
+    expired = create_session_token(42, "alice", secret, ttl_seconds=-10)
+
+    # Then
     assert payload is not None
     assert payload["uid"] == 42
     assert payload["sub"] == "alice"
-
-    # Wrong purpose
     assert verify_session_token(token, secret, expected_purpose="handoff") is None
-    # Tampered signature
     assert verify_session_token(token + "x", secret) is None
-    # Wrong secret
     assert verify_session_token(token, "other") is None
-    # Expired token
-    expired = create_session_token(42, "alice", secret, ttl_seconds=-10)
     assert verify_session_token(expired, secret) is None
-    # Malformed token
     assert verify_session_token(None, secret) is None
     assert verify_session_token("not-a-token", secret) is None
 
 
-def test_safe_redirect_url():
-    assert is_safe_redirect_url("/buckets", "localhost", 8088) is True
-    assert is_safe_redirect_url("http://dagster.localhost:8088/runs", "localhost", 8088) is True
-    assert is_safe_redirect_url("http://localhost:8088/", "localhost", 8088) is True
-    assert is_safe_redirect_url("//evil.com/phish", "localhost", 8088) is False
-    assert is_safe_redirect_url("https://evil.com/phish", "localhost", 8088) is False
-    assert is_safe_redirect_url("http://dagster.localhost:9999/", "localhost", 8088) is False
-    assert is_safe_redirect_url("javascript:alert(1)", "localhost", 8088) is False
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [
+        ("/buckets", True),
+        ("http://dagster.localhost:8088/runs", True),
+        ("http://localhost:8088/", True),
+        ("//evil.com/phish", False),
+        ("https://evil.com/phish", False),
+        ("http://dagster.localhost:9999/", False),
+        ("javascript:alert(1)", False),
+    ],
+)
+def test_safe_redirect_url(target: str, expected: bool):
+    # Given
+    base_domain = "localhost"
+    gateway_port = 8088
+
+    # When
+    allowed = is_safe_redirect_url(target, base_domain, gateway_port)
+
+    # Then
+    assert allowed is expected
 
 
 @pytest.mark.anyio
 async def test_parse_request_form_urlencoded_and_multipart():
+    # Given
     async def endpoint(request):
         parsed = await parse_request_form(request)
         return JSONResponse(
@@ -61,51 +73,54 @@ async def test_parse_request_form_urlencoded_and_multipart():
 
     app = Starlette(routes=[Route("/submit", endpoint, methods=["POST"])])
     transport = httpx.ASGITransport(app=app)
+
+    # When
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp_url = await client.post("/submit", data={"username": "alice", "role": "read"})
-        assert resp_url.status_code == 200
-        assert resp_url.json()["fields"] == {"username": "alice", "role": "read"}
-
         resp_mp = await client.post(
             "/submit",
             data={"prefix": "raw/"},
             files={"file": ("sample.csv", b"col1,col2\n1,2\n", "text/csv")},
         )
-        assert resp_mp.status_code == 200
-        body = resp_mp.json()
-        assert body["fields"] == {"prefix": "raw/"}
-        assert body["files"]["file"] == ["sample.csv", "col1,col2\n1,2\n", "text/csv"]
-
         resp_empty = await client.post("/submit", content=b"{}", headers={"content-type": "application/json"})
-        assert resp_empty.json() == {"fields": {}, "files": {}}
+
+    # Then
+    assert resp_url.status_code == 200
+    assert resp_url.json()["fields"] == {"username": "alice", "role": "read"}
+    assert resp_mp.status_code == 200
+    body = resp_mp.json()
+    assert body["fields"] == {"prefix": "raw/"}
+    assert body["files"]["file"] == ["sample.csv", "col1,col2\n1,2\n", "text/csv"]
+    assert resp_empty.json() == {"fields": {}, "files": {}}
 
 
 def test_in_memory_s3_service_operations():
+    # Given
     s3 = InMemoryS3Service(["lakehouse"])
-    assert s3.list_buckets() == ["lakehouse"]
-    assert s3.bucket_exists("lakehouse") is True
-    assert s3.bucket_exists("missing") is False
-
     s3.create_bucket("landing-zone")
     s3.put_object("landing-zone", "raw/2026/data.csv", b"id,val\n1,a\n", "text/csv")
     s3.put_object("landing-zone", "readme.txt", b"hello", "text/plain")
 
+    # When
     root_list = s3.list_objects("landing-zone", prefix="", delimiter="/")
+    nested_list = s3.list_objects("landing-zone", prefix="raw/2026/", delimiter="/")
+    data, ct = s3.get_object("landing-zone", "readme.txt")
+    size, head_ct, etag = s3.head_object("landing-zone", "readme.txt")
+    s3.delete_object("landing-zone", "readme.txt")
+
+    # Then
+    assert s3.list_buckets() == ["lakehouse", "landing-zone"]
+    assert s3.bucket_exists("lakehouse") is True
+    assert s3.bucket_exists("missing") is False
     assert root_list.prefixes == ["raw/"]
     assert [o.key for o in root_list.objects] == ["readme.txt"]
-
-    nested_list = s3.list_objects("landing-zone", prefix="raw/2026/", delimiter="/")
     assert [o.key for o in nested_list.objects] == ["raw/2026/data.csv"]
-
-    data, ct = s3.get_object("landing-zone", "readme.txt")
     assert data == b"hello"
     assert ct == "text/plain"
-    size, head_ct, etag = s3.head_object("landing-zone", "readme.txt")
     assert size == 5
     assert head_ct == "text/plain"
     assert etag
 
-    s3.delete_object("landing-zone", "readme.txt")
     with pytest.raises(S3StorageError) as exc_info:
         s3.get_object("landing-zone", "readme.txt")
     assert exc_info.value.code == "NoSuchKey"
@@ -115,22 +130,29 @@ def test_in_memory_s3_service_operations():
     assert exc_bucket.value.code == "NoSuchBucket"
 
 
-def test_boto3_s3_service_wrapper(monkeypatch):
-    mock_client = MagicMock()
+def test_boto3_s3_service_wrapper(mocker, monkeypatch):
+    # Given
+    mock_client = mocker.MagicMock()
     mock_client.list_buckets.return_value = {"Buckets": [{"Name": "b2"}, {"Name": "b1"}]}
     mock_client.list_objects_v2.return_value = {
         "CommonPrefixes": [{"Prefix": "sub/"}],
         "Contents": [],
     }
     monkeypatch.setattr("lakehouse_portal.s3_client.boto3.client", lambda *a, **kw: mock_client)
-
     svc = Boto3S3Service("http://rustfs:9000", "ak", "sk")
-    assert svc.list_buckets() == ["b1", "b2"]
-    assert svc.bucket_exists("b1") is True
-    assert svc.list_objects("b1").prefixes == ["sub/"]
 
+    # When
+    buckets = svc.list_buckets()
+    exists = svc.bucket_exists("b1")
+    listing = svc.list_objects("b1")
     mock_client.head_bucket.side_effect = ClientError(
         {"Error": {"Code": "404", "Message": "Not Found"}, "ResponseMetadata": {"HTTPStatusCode": 404}},
         "HeadBucket",
     )
-    assert svc.bucket_exists("missing") is False
+    missing_exists = svc.bucket_exists("missing")
+
+    # Then
+    assert buckets == ["b1", "b2"]
+    assert exists is True
+    assert listing.prefixes == ["sub/"]
+    assert missing_exists is False

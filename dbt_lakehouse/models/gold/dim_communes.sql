@@ -2,7 +2,7 @@
 
 
 WITH SOURCE AS (
-    SELECT * FROM {{ source('bronze', 'communes_geo_77') }}
+    SELECT * FROM {{ source('deduplication_zone', 'communes_geo_77') }}
 ),
 
 DEDUPLICATED AS (
