@@ -1,6 +1,18 @@
 # NDR Open Data Lakehouse
 
 [![CI](https://github.com/Tantelitiana22/lakehouse-project-new-tech/actions/workflows/ci.yml/badge.svg)](https://github.com/Tantelitiana22/lakehouse-project-new-tech/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white)
+![Dagster](https://img.shields.io/badge/Dagster-1.13-4F43DD?logo=dagster&logoColor=white)
+![Pydantic](https://img.shields.io/badge/Pydantic-v2-E92063?logo=pydantic&logoColor=white)
+![Apache Spark](https://img.shields.io/badge/Spark-4.1.1-E25A1C?logo=apachespark&logoColor=white)
+![Delta Lake](https://img.shields.io/badge/Delta%20Lake-4.3.1%20%2B%20UniForm-00ADD4)
+![Apache Iceberg](https://img.shields.io/badge/Iceberg-1.12.0-3B7DDD)
+![Unity Catalog](https://img.shields.io/badge/Unity%20Catalog-OSS-1B3139)
+![dbt](https://img.shields.io/badge/dbt-2.0.11-FF694B?logo=dbt&logoColor=white)
+![MetricFlow](https://img.shields.io/badge/Semantic%20Layer-MetricFlow-FF694B)
+![RustFS](https://img.shields.io/badge/Storage-RustFS%20(S3)-DEA584)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
 A 100% metadata-driven, asset-orchestrated Open Data Lakehouse. Ingestion,
 landing-zone storage, Unity Catalog namespaces, Iceberg write behaviour and
