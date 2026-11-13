@@ -60,10 +60,14 @@ repos:
           - boto3>=1.34.0,<2
           - httpx>=0.27.0,<1
           - dagster>=1.9.0,<2
+          - dagster-webserver>=1.9.0,<2
+          - sqlalchemy>=2.0.0,<3
+          - starlette>=0.38.0,<2
+          - jinja2>=3.1.0,<4
         args:
           - --rcfile=.pylintrc
-          - --ignore-paths=^orchestration/ingestion/tests/
-        exclude: ^orchestration/ingestion/tests/
+          - --ignore-paths=^(orchestration/ingestion/tests|portal/tests)/
+        exclude: ^(orchestration/ingestion/tests|portal/tests)/
 
   # ruff overlaps black/isort/flake8 on formatting and import order, which is
   # why it is deliberately configured to only lint (_not_ format) here: `ruff

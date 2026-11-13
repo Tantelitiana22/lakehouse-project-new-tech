@@ -392,26 +392,29 @@ collides on the location name.
 
 ```bash
 cp .env.example .env
-make up                 # RustFS, bucket init, Unity Catalog OSS, Spark Thrift, Dagster
-open http://localhost:3000
+make up                 # RustFS, Unity Catalog (+ UI), Spark Thrift, Dagster, Portal, Nginx Gateway
+open http://localhost:8088
 make ingest             # materialize all generated landing + Bronze assets
 make dbt-build          # build Gold Iceberg models
 make dbt-lint           # lint the SQL with dbt's native linter
 ```
 
-Useful endpoints:
+Useful endpoints (all web UIs are routed and gated through the Nginx gateway on port `8088`):
 
 | Service | URL |
 |---|---|
-| Dagster | http://localhost:3000 |
-| Unity Catalog UI | http://localhost:3001 |
-| RustFS console | http://localhost:9001 |
-| RustFS S3 API | http://localhost:9000 |
-| Unity Catalog OSS | http://localhost:8080 |
+| Access Portal & Launchpad | http://localhost:8088 (or http://portal.localhost:8088) |
+| Dagster (gated) | http://dagster.localhost:8088 |
+| Unity Catalog UI (gated) | http://uc.localhost:8088 |
+| Spark Thrift UI (gated) | http://spark.localhost:8088 |
+| RustFS Console (gated, admin) | http://rustfs.localhost:8088 |
+| Scoped S3 Proxy (SigV4) | http://s3.localhost:8088 |
+| RustFS S3 API (direct internal/dev) | http://localhost:9000 |
+| Unity Catalog OSS API | http://localhost:8080 |
 | Unity Catalog API browser | http://localhost:8080/docs/ |
 | Iceberg REST API | http://localhost:8080/api/2.1/unity-catalog/iceberg |
-| Spark Thrift | thrift://localhost:10000 |
-| Postgres (Dagster state) | postgresql://dagster:dagster@localhost:5432/dagster |
+| Spark Thrift JDBC | thrift://localhost:10000 |
+| Postgres (Dagster & Portal state) | postgresql://dagster:dagster@localhost:5432/dagster |
 
 Note that Unity Catalog's `/docs/` path **needs the trailing slash**. Without it
 the page loads but renders blank: the HTML fetches `main.<hash>.js` relatively,
@@ -443,6 +446,22 @@ Rebuild the UI against a different Unity Catalog release by bumping the
 ```bash
 docker compose build --build-arg UC_UI_VERSION=v0.7.0 unity-catalog-ui
 ```
+
+### Access Portal & Nginx Reverse Proxy Gateway
+
+The `portal` and `gateway` (`nginx:1.27-alpine`) services provide unified authentication, service discovery, and access management for the stack:
+
+- **Default admin login**: `admin` / `admin` (override via `PORTAL_ADMIN_USER`, `PORTAL_ADMIN_PASSWORD`, and `PORTAL_SECRET_KEY`).
+- **Nginx `auth_request` gating**: Requests to `dagster.localhost:8088`, `uc.localhost:8088`, `spark.localhost:8088`, and `rustfs.localhost:8088` are verified by `portal:8000/internal/verify` before proxying.
+- **Cross-subdomain SSO**: Clicking **Launch** on the portal routes through `/auth/handoff` and `/__auth_callback` so the subdomain receives a signed `lh_session` cookie without requiring a second login.
+- **In-Portal Bucket Explorer (`/buckets`)**: Standard users see only buckets granted to them (`read` or `read_write`) and can browse/download or upload/delete objects accordingly.
+- **Scoped S3 Proxy (`http://s3.localhost:8088`)**: Users generate personal `LHAK...` S3 access keys under `/keys`. Requests signed with AWS SigV4 against `http://s3.localhost:8088` are verified by the portal and enforced per-bucket (`read` vs `read_write`) before executing against RustFS:
+
+```bash
+aws --endpoint-url http://s3.localhost:8088 s3 ls
+```
+
+- **Admin Matrix (`/admin`)**: Admins create/disable users, toggle service entitlements (`dagster`, `unity-catalog`, `spark-ui`, `rustfs-console`), and set per-bucket roles (`None`, `Read`, `Read / Write`).
 
 ### Where Dagster keeps its state
 

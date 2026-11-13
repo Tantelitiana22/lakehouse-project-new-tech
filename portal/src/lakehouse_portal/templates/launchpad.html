@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Launchpad — Lakehouse Portal{% endblock %}
+{% block content %}
+<h1 style="margin-top:0; font-size:1.45rem;">Lakehouse Services</h1>
+<p class="muted">Launch services authorized for <strong>{{ current_user.username }}</strong> through the Nginx gateway (port {{ config.gateway_port }}).</p>
+
+<div class="grid" style="margin-top:1.25rem;">
+  {% for item in service_cards %}
+  <div class="card" style="display:flex; flex-direction:column; justify-content:space-between;">
+    <div>
+      <div class="card-header">
+        <div>
+          <h2 style="margin:0; font-size:1.1rem;">{{ item.service.name }}</h2>
+          <div class="muted" style="font-size:0.82rem;">{{ item.service.subtitle }}</div>
+        </div>
+        {% if item.online %}
+        <span class="badge online">Online</span>
+        {% else %}
+        <span class="badge offline">Offline</span>
+        {% endif %}
+      </div>
+      <p class="muted" style="font-size:0.87rem; margin:0.6rem 0 1rem;">{{ item.service.description }}</p>
+    </div>
+    <div class="row" style="justify-content:space-between;">
+      <code class="muted" style="font-size:0.78rem;">{{ item.service.subdomain }}.{{ config.base_domain }}:{{ config.gateway_port }}</code>
+      {% if item.allowed %}
+      <a class="btn btn-sm" href="/auth/handoff?next={{ item.url | urlencode }}">Launch &nearr;</a>
+      {% else %}
+      <span class="badge">Restricted</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<h2 style="margin-top:2rem; font-size:1.2rem;">Permitted RustFS Buckets</h2>
+<div class="card" style="margin-top:0.75rem;">
+  {% if bucket_grants %}
+  <table>
+    <thead>
+      <tr>
+        <th>Bucket</th>
+        <th>Permission</th>
+        <th style="text-align:right;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in bucket_grants %}
+      <tr>
+        <td><strong>{{ b.name }}</strong></td>
+        <td>
+          {% if b.level == 'read_write' %}
+          <span class="badge rw">Read / Write</span>
+          {% else %}
+          <span class="badge ro">Read Only</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right;">
+          <a class="btn btn-secondary btn-sm" href="/buckets/{{ b.name }}">Explore &rarr;</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:0;">No bucket permissions assigned yet. Ask an administrator to grant bucket access.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 UV := uv
-PY_SRC := orchestration/ingestion/src orchestration/ingestion/tests use_case
+PY_SRC := orchestration/ingestion/src orchestration/ingestion/tests portal/src portal/tests use_case
 
 .PHONY: help up down build restart logs ps dagster-dev ingest dbt-build dbt-parse dbt-lint dbt-format test test-cov lint format check clean ui-build
 
@@ -72,7 +72,7 @@ lint:
 	$(UV) run flake8 --config=.flake8 $(PY_SRC)
 	$(UV) run ruff check $(PY_SRC)
 	$(UV) run mypy --config-file=pyproject.toml $(PY_SRC)
-	$(UV) run pylint --rcfile=.pylintrc orchestration/ingestion/src use_case
+	$(UV) run pylint --rcfile=.pylintrc orchestration/ingestion/src portal/src use_case
 
 format:
 	$(UV) run isort $(PY_SRC)

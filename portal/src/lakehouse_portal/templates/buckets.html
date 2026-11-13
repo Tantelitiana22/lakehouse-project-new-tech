@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Buckets — Lakehouse Portal{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between; margin-bottom:1rem;">
+  <div>
+    <h1 style="margin:0; font-size:1.45rem;">RustFS Bucket Explorer</h1>
+    <p class="muted" style="margin:0.2rem 0 0;">Browse and manage objects in buckets you have been granted access to.</p>
+  </div>
+  {% if current_user.is_admin %}
+  <form method="post" action="/buckets" class="row">
+    <input type="text" name="bucket_name" placeholder="new-bucket-name" required />
+    <button type="submit" class="btn btn-sm">Create Bucket</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  {% if buckets %}
+  <table>
+    <thead>
+      <tr>
+        <th>Bucket Name</th>
+        <th>Your Access</th>
+        <th style="text-align:right;">Browse</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in buckets %}
+      <tr>
+        <td><strong>{{ b.name }}</strong></td>
+        <td>
+          {% if b.level == 'read_write' %}
+          <span class="badge rw">Read / Write</span>
+          {% else %}
+          <span class="badge ro">Read Only</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right;">
+          <a class="btn btn-sm" href="/buckets/{{ b.name }}">Open</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:0;">You do not have access to any RustFS buckets.</p>
+  {% endif %}
+</div>
+{% endblock %}

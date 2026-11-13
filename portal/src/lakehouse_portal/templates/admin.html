@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Admin Access Control — Lakehouse Portal{% endblock %}
+{% block content %}
+<h1 style="margin-top:0; font-size:1.45rem;">Access Management</h1>
+<p class="muted">Create users and manage service UI entitlements and RustFS bucket permissions.</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:1.25rem;">
+  <h2 style="margin-top:0; font-size:1.05rem;">Create User</h2>
+  <form method="post" action="/admin/users" class="row">
+    <input type="text" name="username" placeholder="username" required />
+    <input type="password" name="password" placeholder="password" required />
+    <label class="row" style="gap:0.35rem; font-size:0.88rem;">
+      <input type="checkbox" name="is_admin" value="true" /> Admin
+    </label>
+    <button type="submit" class="btn btn-sm">Add User</button>
+  </form>
+</div>
+
+<div class="card" style="overflow-x:auto;">
+  <h2 style="margin-top:0; font-size:1.05rem;">User Entitlements Matrix</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Status</th>
+        <th>Service UI Access</th>
+        <th>RustFS Bucket Permissions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>
+          <strong>{{ u.username }}</strong>
+          {% if u.is_admin %}<div><span class="badge rw">Admin (All)</span></div>{% endif %}
+        </td>
+        <td>
+          {% if u.is_active %}
+          <span class="badge online">Active</span>
+          {% else %}
+          <span class="badge offline">Disabled</span>
+          {% endif %}
+          {% if u.id != current_user.id %}
+          <form method="post" action="/admin/users/{{ u.id }}/toggle-active" style="margin-top:0.4rem;">
+            <button type="submit" class="btn btn-secondary btn-sm">
+              {% if u.is_active %}Disable{% else %}Enable{% endif %}
+            </button>
+          </form>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.is_admin %}
+          <span class="muted">All services enabled</span>
+          {% else %}
+          <div class="row" style="gap:0.4rem;">
+            {% for svc in services %}
+              {% set has_svc = svc.slug in u.granted_services %}
+              <form method="post" action="/admin/users/{{ u.id }}/service" style="margin:0;">
+                <input type="hidden" name="service_slug" value="{{ svc.slug }}" />
+                <input type="hidden" name="enabled" value="{{ 'false' if has_svc else 'true' }}" />
+                <button type="submit" class="btn btn-sm {{ '' if has_svc else 'btn-secondary' }}">
+                  {{ svc.name }}: {{ 'ON' if has_svc else 'OFF' }}
+                </button>
+              </form>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.is_admin %}
+          <span class="muted">Read / Write on all buckets</span>
+          {% else %}
+          <div style="display:flex; flex-direction:column; gap:0.35rem;">
+            {% for bname in all_buckets %}
+              {% set lvl = u.bucket_levels.get(bname, 'none') %}
+              <form method="post" action="/admin/users/{{ u.id }}/bucket" class="row" style="gap:0.4rem;">
+                <input type="hidden" name="bucket_name" value="{{ bname }}" />
+                <span style="min-width:110px; font-size:0.85rem;"><code>{{ bname }}</code></span>
+                <select name="level" onchange="this.form.submit()">
+                  <option value="none" {% if lvl == 'none' %}selected{% endif %}>None</option>
+                  <option value="read" {% if lvl == 'read' %}selected{% endif %}>Read</option>
+                  <option value="read_write" {% if lvl == 'read_write' %}selected{% endif %}>Read / Write</option>
+                </select>
+                <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+              </form>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

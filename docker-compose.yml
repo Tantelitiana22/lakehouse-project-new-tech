@@ -33,7 +33,6 @@ services:
       RUSTFS_CONSOLE_ADDRESS: ":9001"
     ports:
       - "9000:9000"
-      - "9001:9001"
     volumes:
       - rustfs-data:/data
     restart: unless-stopped
@@ -119,8 +118,6 @@ services:
       # concern and the same image works against any UC endpoint.
       UC_SERVER: http://unity-catalog:8080
       NGINX_PORT: "3000"
-    ports:
-      - "3001:3000"
     depends_on:
       unity-catalog:
         condition: service_started
@@ -156,6 +153,10 @@ services:
       - spark.hive.server2.thrift.port=10000
       - --conf
       - spark.sql.warehouse.dir=s3a://lakehouse/warehouse
+      - --conf
+      - spark.ui.enabled=true
+      - --conf
+      - spark.ui.port=4040
     restart: unless-stopped
 
   postgres:
@@ -213,8 +214,6 @@ services:
       DAGSTER_PG_USERNAME: dagster
       DAGSTER_PG_PASSWORD: dagster
       DAGSTER_PG_DB: dagster
-    ports:
-      - "3000:3000"
     volumes:
       - dagster-home:/app/.dagster
       # Makes the webserver and the daemon share one Postgres-backed instance
@@ -271,6 +270,43 @@ services:
         condition: service_healthy
       dagster-webserver:
         condition: service_started
+    restart: unless-stopped
+
+  portal:
+    image: ndr-lakehouse-portal:local
+    build:
+      context: .
+      dockerfile: Dockerfile.portal
+    hostname: portal
+    environment:
+      <<: *aws-env
+      PORTAL_DATABASE_URL: postgresql+psycopg2://dagster:dagster@postgres:5432/portal
+      PORTAL_SECRET_KEY: ${PORTAL_SECRET_KEY:-ndr-lakehouse-dev-portal-secret-change-me}
+      PORTAL_ADMIN_USER: ${PORTAL_ADMIN_USER:-admin}
+      PORTAL_ADMIN_PASSWORD: ${PORTAL_ADMIN_PASSWORD:-admin}
+      PORTAL_GATEWAY_PORT: "8088"
+      PORTAL_BASE_DOMAIN: localhost
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    restart: unless-stopped
+
+  gateway:
+    image: ndr-lakehouse-gateway:local
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    hostname: gateway
+    environment:
+      GATEWAY_PORT: "8088"
+      GATEWAY_BASE_DOMAIN: localhost
+    ports:
+      - "8088:8088"
+    depends_on:
+      portal:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

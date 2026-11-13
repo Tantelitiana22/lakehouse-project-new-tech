@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ bucket }} — Bucket Explorer{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between; margin-bottom:1rem;">
+  <div>
+    <div class="muted" style="font-size:0.85rem;">
+      <a href="/buckets">Buckets</a> / <strong>{{ bucket }}</strong>{% if prefix %} / {{ prefix }}{% endif %}
+    </div>
+    <h1 style="margin:0.25rem 0 0; font-size:1.4rem;">s3://{{ bucket }}/{{ prefix }}</h1>
+  </div>
+  <div class="row">
+    {% if level == 'read_write' %}
+    <span class="badge rw">Read / Write</span>
+    {% else %}
+    <span class="badge ro">Read Only</span>
+    {% endif %}
+    {% if parent_prefix is not none %}
+    <a class="btn btn-secondary btn-sm" href="/buckets/{{ bucket }}?prefix={{ parent_prefix | urlencode }}">&uarr; Up</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if level == 'read_write' %}
+<div class="card" style="margin-bottom:1rem;">
+  <form method="post" action="/buckets/{{ bucket }}/upload" enctype="multipart/form-data" class="row">
+    <input type="hidden" name="prefix" value="{{ prefix }}" />
+    <input type="file" name="file" required />
+    <button type="submit" class="btn btn-sm">Upload to current prefix</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Size</th>
+        <th>Last Modified</th>
+        <th style="text-align:right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in listing.prefixes %}
+      <tr>
+        <td><a href="/buckets/{{ bucket }}?prefix={{ p | urlencode }}">&#128193; {{ p[prefix|length:] }}</a></td>
+        <td class="muted">&mdash;</td>
+        <td class="muted">Folder</td>
+        <td></td>
+      </tr>
+      {% endfor %}
+      {% for obj in listing.objects %}
+      <tr>
+        <td>{{ obj.key[prefix|length:] }}</td>
+        <td class="muted">{{ obj.size }} B</td>
+        <td class="muted">{{ obj.last_modified }}</td>
+        <td style="text-align:right;">
+          <div class="row" style="justify-content:flex-end;">
+            <a class="btn btn-secondary btn-sm" href="/buckets/{{ bucket }}/download/{{ obj.key }}">Download</a>
+            {% if level == 'read_write' %}
+            <form method="post" action="/buckets/{{ bucket }}/delete" style="margin:0;">
+              <input type="hidden" name="key" value="{{ obj.key }}" />
+              <input type="hidden" name="prefix" value="{{ prefix }}" />
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not listing.prefixes and not listing.objects %}
+      <tr>
+        <td colspan="4" class="muted">No objects found under this prefix.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
